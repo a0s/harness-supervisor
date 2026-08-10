@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="740" viewBox="0 0 1800 740" role="img" aria-labelledby="title desc">
+  <title id="title">Two consumer repositories linked to a shared supervisor harness</title>
+  <desc id="desc">Project A and Project B appear as folder trees on either side of the harness-supervisor tree. Arrows connect each project supervisor skill directory and Claude agent files to their shared targets. State and settings remain local.</desc>
+  <defs>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-violet" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#7c3aed"/>
+    </marker>
+    <style>
+      .canvas { fill: #ffffff; }
+      .panel { fill: #f8fafc; stroke: #94a3b8; stroke-width: 2; }
+      .shared-panel { fill: #fefce8; stroke: #ca8a04; stroke-width: 2.5; }
+      .title { font: 700 25px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .tree { font: 18px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #172033; }
+      .tree-small { font: 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #172033; }
+      .note { font: 600 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #334155; }
+      .skill-row { fill: #dbeafe; stroke: #2563eb; stroke-width: 1.5; }
+      .claude-row { fill: #ede9fe; stroke: #7c3aed; stroke-width: 1.5; }
+      .local-row { fill: #f1f5f9; stroke: #64748b; stroke-width: 1.5; stroke-dasharray: 6 5; }
+      .skill-link { fill: none; stroke: #2563eb; stroke-width: 4; marker-end: url(#arrow-blue); }
+      .claude-link { fill: none; stroke: #7c3aed; stroke-width: 4; marker-end: url(#arrow-violet); }
+      .link-label { font: 700 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-anchor: middle; }
+    </style>
+  </defs>
+
+  <rect class="canvas" width="1800" height="740"/>
+  <text class="title" x="900" y="34" text-anchor="middle">Shared supervisor links</text>
+  <text class="subtitle" x="900" y="58" text-anchor="middle">Arrows are symlinks · @ marks a linked entry · local state has no arrow</text>
+
+  <rect class="panel" x="20" y="78" width="500" height="600" rx="14"/>
+  <rect class="shared-panel" x="650" y="78" width="500" height="600" rx="14"/>
+  <rect class="panel" x="1280" y="78" width="500" height="600" rx="14"/>
+
+  <text class="title" x="270" y="116" text-anchor="middle">Project A</text>
+  <text class="title" x="900" y="116" text-anchor="middle">harness-supervisor</text>
+  <text class="title" x="1530" y="116" text-anchor="middle">Project B</text>
+
+  <rect class="skill-row" x="40" y="239" width="460" height="38" rx="6"/>
+  <rect class="local-row" x="40" y="274" width="460" height="38" rx="6"/>
+  <rect class="claude-row" x="40" y="379" width="460" height="38" rx="6"/>
+  <rect class="skill-row" x="670" y="239" width="460" height="38" rx="6"/>
+  <rect class="claude-row" x="670" y="379" width="460" height="38" rx="6"/>
+  <rect class="skill-row" x="1300" y="239" width="460" height="38" rx="6"/>
+  <rect class="local-row" x="1300" y="274" width="460" height="38" rx="6"/>
+  <rect class="claude-row" x="1300" y="379" width="460" height="38" rx="6"/>
+
+  <text class="tree" x="48" y="158">
+    <tspan x="48" dy="0">Proj-A/</tspan>
+    <tspan x="48" dy="35">├── .agents/</tspan>
+    <tspan x="48" dy="35">│   ├── skills/</tspan>
+    <tspan x="48" dy="35">│   │   └── supervisor @</tspan>
+    <tspan x="48" dy="35">│   └── state/  (local)</tspan>
+    <tspan x="48" dy="35">└── .claude/</tspan>
+    <tspan x="48" dy="35">    ├── agents/</tspan>
+    <tspan x="48" dy="35">    │   └── supervisor-*.md @</tspan>
+    <tspan x="48" dy="35">    └── settings.json  (local)</tspan>
+  </text>
+
+  <text class="tree" x="678" y="158">
+    <tspan x="678" dy="0">harness-supervisor/</tspan>
+    <tspan x="678" dy="35">└── harness/</tspan>
+    <tspan x="678" dy="35">    ├── .agents/</tspan>
+    <tspan x="678" dy="35">    │   └── skills/supervisor/</tspan>
+    <tspan x="678" dy="35">    │       ├── SKILL.md</tspan>
+    <tspan x="678" dy="35">    │       └── reference/</tspan>
+    <tspan x="678" dy="35">    └── .claude/</tspan>
+    <tspan x="678" dy="35">        └── agents/supervisor-*.md</tspan>
+  </text>
+  <text class="tree-small" x="710" y="438">
+    <tspan x="710" dy="0">├── supervisor-coordinator.md</tspan>
+    <tspan x="710" dy="27">├── supervisor-coordinator-high.md</tspan>
+    <tspan x="710" dy="27">├── supervisor-implementer.md</tspan>
+    <tspan x="710" dy="27">├── supervisor-implementer-high.md</tspan>
+    <tspan x="710" dy="27">├── supervisor-verifier.md</tspan>
+    <tspan x="710" dy="27">└── supervisor-scout.md</tspan>
+  </text>
+
+  <text class="tree" x="1308" y="158">
+    <tspan x="1308" dy="0">Proj-B/</tspan>
+    <tspan x="1308" dy="35">├── .agents/</tspan>
+    <tspan x="1308" dy="35">│   ├── skills/</tspan>
+    <tspan x="1308" dy="35">│   │   └── supervisor @</tspan>
+    <tspan x="1308" dy="35">│   └── state/  (local)</tspan>
+    <tspan x="1308" dy="35">└── .claude/</tspan>
+    <tspan x="1308" dy="35">    ├── agents/</tspan>
+    <tspan x="1308" dy="35">    │   └── supervisor-*.md @</tspan>
+    <tspan x="1308" dy="35">    └── settings.json  (local)</tspan>
+  </text>
+
+  <path class="skill-link" d="M 500 258 L 670 258"/>
+  <path class="claude-link" d="M 500 398 L 670 398"/>
+  <path class="skill-link" d="M 1300 258 L 1130 258"/>
+  <path class="claude-link" d="M 1300 398 L 1130 398"/>
+
+  <text class="link-label" x="585" y="244" fill="#1d4ed8">directory</text>
+  <text class="link-label" x="585" y="384" fill="#6d28d9">6 files</text>
+  <text class="link-label" x="1215" y="244" fill="#1d4ed8">directory</text>
+  <text class="link-label" x="1215" y="384" fill="#6d28d9">6 files</text>
+
+  <text class="note" x="900" y="712" text-anchor="middle">Each Claude file links to the shared file with the same basename. Project state and settings never leave the consumer repository.</text>
+</svg>

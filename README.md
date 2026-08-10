@@ -17,43 +17,12 @@ link.sh                            safe symlink installer
 
 ## How projects link to the harness
 
-```mermaid
-flowchart TB
-  subgraph CONSUMERS["Consumer repositories"]
-    direction LR
-    subgraph A["Project A"]
-      direction TB
-      A_SKILL["Codex<br/>.agents/skills/supervisor"]
-      A_CLAUDE["Claude Code<br/>.claude/agents/supervisor-*.md"]
-      A_STATE["Local only — no symlink<br/>.agents/state/&lt;topic&gt;/"]
-    end
+![Project A and Project B symlink their shared supervisor entries to the
+harness-supervisor checkout, while each project keeps its own state and
+settings](docs/link-layout.svg)
 
-    subgraph B["Project B"]
-      direction TB
-      B_SKILL["Codex<br/>.agents/skills/supervisor"]
-      B_CLAUDE["Claude Code<br/>.claude/agents/supervisor-*.md"]
-      B_STATE["Local only — no symlink<br/>.agents/state/&lt;topic&gt;/"]
-    end
-  end
-
-  subgraph S["~/src/harness-supervisor"]
-    direction LR
-    S_SKILL["Shared Codex skill<br/>harness/.agents/skills/supervisor/"]
-    S_CLAUDE["Shared Claude definitions<br/>harness/.claude/agents/supervisor-*.md"]
-  end
-
-  A_SKILL -. directory symlink .-> S_SKILL
-  A_CLAUDE -. same-basename file symlinks .-> S_CLAUDE
-  B_SKILL -. directory symlink .-> S_SKILL
-  B_CLAUDE -. same-basename file symlinks .-> S_CLAUDE
-
-  classDef local fill:#f6f8fa,stroke:#57606a,stroke-dasharray:4 3,color:#24292f;
-  class A_STATE,B_STATE local;
-```
-
-Each Claude link maps to the harness file with the same basename. The state
-nodes deliberately have no arrows: every project owns its plans, WP checkpoints,
-agent ledger, and recovery files locally.
+The arrows are the installed symlinks. Claude definitions map one-to-one by
+basename. Entries without arrows remain owned by each consumer repository.
 
 The installer links only immutable shared assets. It creates
 `.agents/state/` as a real local directory in every consumer. It does not link
