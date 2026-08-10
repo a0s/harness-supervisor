@@ -14,6 +14,16 @@ settings](docs/link-layout.svg)
 The arrows are the installed symlinks. Claude definitions map one-to-one by
 basename. Entries without arrows remain owned by each consumer repository.
 
+## How agents form a task tree
+
+![A root agent delegates two independent work packages through a supervisor,
+with an optional scout and an implementer-to-verifier sequence in each
+supervisor-owned lane](docs/agent-tree.svg)
+
+This example shows a delegated high-risk task with two independent work
+packages. Only the active runtime's row is used. The scout is optional, and the
+verifiers appear because the independent-verifier risk gate fired.
+
 The installer links only immutable shared assets. It creates
 `.agents/state/` as a real local directory in every consumer. It does not link
 or modify the consumer's `AGENTS.md`, `WORKLOG.md`, `.claude/settings.json`,
