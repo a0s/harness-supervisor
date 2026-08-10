@@ -5,16 +5,6 @@ one canonical skill, runtime-specific role routing, durable recovery state, and
 Claude subagent definitions without sharing a consumer repository's live state
 or settings.
 
-## Layout
-
-```text
-harness/
-  .agents/skills/supervisor/       shared process skill and references
-  .claude/agents/supervisor-*.md   Claude Code role definitions
-  AGENTS.supervisor.md             consumer instruction snippet
-link.sh                            safe symlink installer
-```
-
 ## How projects link to the harness
 
 ![Project A and Project B symlink their shared supervisor entries to the
