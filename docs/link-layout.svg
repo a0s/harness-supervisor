@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="740" viewBox="0 0 1800 740" role="img" aria-labelledby="title desc">
   <title id="title">Two consumer repositories linked to a shared supervisor harness</title>
-  <desc id="desc">Project A and Project B appear as folder trees on either side of the harness-supervisor tree. Arrows connect each project supervisor skill directory and Claude agent files to their shared targets. State and settings remain local.</desc>
+  <desc id="desc">Project A and Project B appear as folder trees on either side of the harness-supervisor tree. Arrows connect each project's Codex and Claude supervisor skill directories and Claude agent files to their shared targets. State and settings remain local.</desc>
   <defs>
     <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
       <path d="M0,0 L12,6 L0,12 Z" fill="#2563eb"/>
@@ -40,12 +40,14 @@
 
   <rect class="skill-row" x="40" y="239" width="460" height="38" rx="6"/>
   <rect class="local-row" x="40" y="274" width="460" height="38" rx="6"/>
-  <rect class="claude-row" x="40" y="379" width="460" height="38" rx="6"/>
+  <rect class="skill-row" x="40" y="344" width="460" height="38" rx="6"/>
+  <rect class="claude-row" x="40" y="414" width="460" height="38" rx="6"/>
   <rect class="skill-row" x="670" y="239" width="460" height="38" rx="6"/>
   <rect class="claude-row" x="670" y="379" width="460" height="38" rx="6"/>
   <rect class="skill-row" x="1300" y="239" width="460" height="38" rx="6"/>
   <rect class="local-row" x="1300" y="274" width="460" height="38" rx="6"/>
-  <rect class="claude-row" x="1300" y="379" width="460" height="38" rx="6"/>
+  <rect class="skill-row" x="1300" y="344" width="460" height="38" rx="6"/>
+  <rect class="claude-row" x="1300" y="414" width="460" height="38" rx="6"/>
 
   <text class="tree" x="48" y="158">
     <tspan x="48" dy="0">Proj-A/</tspan>
@@ -54,6 +56,7 @@
     <tspan x="48" dy="35">│   │   └── supervisor @</tspan>
     <tspan x="48" dy="35">│   └── state/  (local)</tspan>
     <tspan x="48" dy="35">└── .claude/</tspan>
+    <tspan x="48" dy="35">    ├── skills/supervisor @</tspan>
     <tspan x="48" dy="35">    ├── agents/</tspan>
     <tspan x="48" dy="35">    │   └── supervisor-*.md @</tspan>
     <tspan x="48" dy="35">    └── settings.json  (local)</tspan>
@@ -85,20 +88,25 @@
     <tspan x="1308" dy="35">│   │   └── supervisor @</tspan>
     <tspan x="1308" dy="35">│   └── state/  (local)</tspan>
     <tspan x="1308" dy="35">└── .claude/</tspan>
+    <tspan x="1308" dy="35">    ├── skills/supervisor @</tspan>
     <tspan x="1308" dy="35">    ├── agents/</tspan>
     <tspan x="1308" dy="35">    │   └── supervisor-*.md @</tspan>
     <tspan x="1308" dy="35">    └── settings.json  (local)</tspan>
   </text>
 
   <path class="skill-link" d="M 500 258 L 670 258"/>
-  <path class="claude-link" d="M 500 398 L 670 398"/>
+  <path class="skill-link" d="M 500 363 L 670 258"/>
+  <path class="claude-link" d="M 500 433 L 670 398"/>
   <path class="skill-link" d="M 1300 258 L 1130 258"/>
-  <path class="claude-link" d="M 1300 398 L 1130 398"/>
+  <path class="skill-link" d="M 1300 363 L 1130 258"/>
+  <path class="claude-link" d="M 1300 433 L 1130 398"/>
 
   <text class="link-label" x="585" y="244" fill="#1d4ed8">directory</text>
-  <text class="link-label" x="585" y="384" fill="#6d28d9">6 files</text>
+  <text class="link-label" x="585" y="296" fill="#1d4ed8">Claude skill</text>
+  <text class="link-label" x="585" y="425" fill="#6d28d9">6 files</text>
   <text class="link-label" x="1215" y="244" fill="#1d4ed8">directory</text>
-  <text class="link-label" x="1215" y="384" fill="#6d28d9">6 files</text>
+  <text class="link-label" x="1215" y="296" fill="#1d4ed8">Claude skill</text>
+  <text class="link-label" x="1215" y="425" fill="#6d28d9">6 files</text>
 
-  <text class="note" x="900" y="712" text-anchor="middle">Each Claude file links to the shared file with the same basename. Project state and settings never leave the consumer repository.</text>
+  <text class="note" x="900" y="712" text-anchor="middle">Both skill entries share one directory; each Claude agent links by basename. Project state and settings stay local.</text>
 </svg>

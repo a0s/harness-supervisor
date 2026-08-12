@@ -24,10 +24,12 @@ This example shows a delegated high-risk task with two independent work
 packages. Only the active runtime's row is used. The scout is optional, and the
 verifiers appear because the independent-verifier risk gate fired.
 
-The installer links only immutable shared assets. It creates
-`.agents/state/` as a real local directory in every consumer. It does not link
-or modify the consumer's `AGENTS.md`, `WORKLOG.md`, `.claude/settings.json`,
-or any run-state file.
+The installer links only immutable shared assets. The canonical supervisor
+skill is linked into both `.agents/skills/supervisor` for Codex and
+`.claude/skills/supervisor` for Claude Code, where it is available as the
+`/supervisor` skill. It creates `.agents/state/` as a real local directory in
+every consumer. It does not link or modify the consumer's `AGENTS.md`,
+`WORKLOG.md`, `.claude/settings.json`, or any run-state file.
 
 ## Install in a repository
 

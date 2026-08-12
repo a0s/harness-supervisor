@@ -55,7 +55,11 @@ ensure_link() {
   ln -s "$source_path" "$target_path"
 }
 
-mkdir -p "$target_repo/.agents/skills" "$target_repo/.agents/state" "$target_repo/.claude/agents"
+mkdir -p \
+  "$target_repo/.agents/skills" \
+  "$target_repo/.agents/state" \
+  "$target_repo/.claude/agents" \
+  "$target_repo/.claude/skills"
 
 for source_path in "$claude_source"/supervisor-*.md; do
   [ -f "$source_path" ] || {
@@ -65,11 +69,13 @@ for source_path in "$claude_source"/supervisor-*.md; do
 done
 
 check_target "$skill_source" "$target_repo/.agents/skills/supervisor"
+check_target "$skill_source" "$target_repo/.claude/skills/supervisor"
 for source_path in "$claude_source"/supervisor-*.md; do
   check_target "$source_path" "$target_repo/.claude/agents/$(basename "$source_path")"
 done
 
 ensure_link "$skill_source" "$target_repo/.agents/skills/supervisor"
+ensure_link "$skill_source" "$target_repo/.claude/skills/supervisor"
 for source_path in "$claude_source"/supervisor-*.md; do
   ensure_link "$source_path" "$target_repo/.claude/agents/$(basename "$source_path")"
 done
