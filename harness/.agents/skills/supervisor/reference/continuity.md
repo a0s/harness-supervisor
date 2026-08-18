@@ -45,6 +45,40 @@ operations are runtime-specific.
 A cross-runtime resume always creates fresh agents from the ledger, brief, WP
 files, and dirty tree. In-memory agent identities are never portable.
 
+## One worktree, one agent — especially after a restart
+
+A misjudged liveness call is survivable. Two agents writing one worktree is not:
+their edits interleave inside files, so the loser's work is not overwritten but
+silently blended, and no later diff can separate the two. Make sharing
+impossible instead of making the liveness call perfect.
+
+**Record the tree.** A WP that owns a worktree carries `worktree:` in its WP file
+and in its ledger row — absolute path plus branch. A resume that cannot say which
+tree belongs to which WP will guess, and guessing is how two agents end up in one.
+
+**Claim it.** The agent working a tree owns `.agents/wt-owner` inside that tree,
+holding runtime, agent id, WP and an ISO timestamp, written before its first
+edit. Read that file before spawning into any existing tree: a marker naming a
+different agent means do not spawn there, whatever the liveness check concluded.
+An agent that finds a foreign marker under itself stops and reports rather than
+working around it. The marker is scratch, not history: never stage or commit it,
+and remove it when the tree is torn down.
+
+**Never relaunch into the interrupted agent's tree.** On restore, checkpoint the
+dirty tree first — a commit on its own branch, labelled honestly as unreviewed —
+then branch a FRESH worktree from that commit for the new agent. If the old agent
+later wakes, the two write to different trees and their work reconciles by merge
+instead of by corruption. This costs one commit and one worktree; the alternative
+costs an afternoon of forensics.
+
+**Absence of writes is not death.** A tree with no recent file changes and a clean
+`git status` may be an agent that has not written yet, or one that is reading,
+measuring, or waiting on a shared resource. Sample twice over a real interval, and
+prefer a runtime liveness control over any filesystem inference. In particular, an
+agent resumed by a message keeps its old task-output file frozen at the moment it
+first stopped: after any resume, that file's timestamp is not a liveness signal at
+all.
+
 ## Restore rule
 
 | State | Action |

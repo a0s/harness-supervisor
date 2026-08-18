@@ -39,6 +39,7 @@ owner:       supervisor-1 <agent-id> / implementer <agent-id>
 last-good:   work actually finished and verified
 next-action: one concrete action a fresh agent can execute
 files:       touched paths in the inherited dirty tree
+worktree:    absolute path + branch, when this WP owns one
 traps:       failed approaches or current blocker
 verified:    commands and real output, including counts/status
 updated:     <ISO timestamp>
@@ -69,7 +70,9 @@ Use one physical Markdown table row in the real file. Record:
 - runtime and role/agent type;
 - requested model and effort;
 - effective model/effort or a known environment override;
-- runtime task/agent id, lifecycle state, and last-seen time.
+- runtime task/agent id, lifecycle state, and last-seen time;
+- the worktree path and branch when the agent owns one, so a resume never has
+  to guess which tree belongs to which WP.
 
 Lifecycle is `spawned | reported | resumed | rotated | dead`. Append a new row
 or transition entry when identity changes. IDs are runtime-local: never pass a

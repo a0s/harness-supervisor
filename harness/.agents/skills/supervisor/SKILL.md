@@ -41,7 +41,8 @@ evidence, not unconditional reasons to add agents; the gates below decide.
   except a tiny correction after an implementer has landed almost all of a WP.
 - Never pay reasoning-model rates for grep, counts, monitoring, or rerunning one
   known command.
-- Never let two agents edit the same file concurrently.
+- Never let two agents edit the same file, or share a worktree, concurrently —
+  including after a restart, when a misjudged liveness call is likeliest.
 - A claim, green build, or agent summary is not verification.
 - Nothing needed for recovery may exist only in a conversation context.
 - Out-of-scope findings are reported, not silently fixed.
