@@ -38,7 +38,7 @@ an unconditional agent or ceremony.
 | Work disappears after a limit | State existed only in conversation | Persist exact brief and rewrite WP after material transitions |
 | Concurrent journal writes collide | Multiple writers share one status file | One WP, one file, one owner |
 | Journaling burns context | Whole run history is reread for each update | Read/rewrite one WP; grep only during resume sweep |
-| Bare “continue” gets a clarification question | Unfinished state was ignored | Sweep `.agents/state/` first |
+| Bare "continue" gets a clarification question | Unfinished state was ignored | Sweep `.agents/state/` first |
 | Restored supervisor starts fresh WPs | Children were not restored downward | Restore what you spawned before spawning new work |
 | Finished work is redone | Resume starts from plan, not WP truth | Read WP first; freeze `done`; use `next-action` |
 | One of several topics is dropped | Resume stops at first match | Sweep and resolve every unfinished WP/ledger owner |

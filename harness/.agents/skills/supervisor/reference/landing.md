@@ -1,7 +1,7 @@
 # Landing work on the integration branch
 
-Read before merging anything into the branch other agents also merge into —
-`master`, `main`, or whatever the repository calls its integration branch — and
+Read before merging anything into the branch other agents also merge into,
+whether the repository calls it `master`, `main` or something else, and
 again on any resume that happens while a landing is in flight.
 
 Parallel agents in separate worktrees are cheap and safe right up to the last
@@ -24,9 +24,9 @@ merge lock, and the slow half of the work happens **before** the lock is taken.
 
 ## Two halves, and only the second one is locked
 
-The lock is short on purpose. Everything expensive — merging the current
+The lock is short on purpose. Everything expensive, meaning merging the current
 integration tip into the feature branch, resolving conflicts, running the full
-suite — happens in the agent's own worktree while no lock is held, so agents do
+suite, happens in the agent's own worktree while no lock is held, so agents do
 that concurrently instead of queueing for it. Only the last few seconds are
 exclusive.
 
@@ -57,8 +57,8 @@ agent-merge-lock release                    # always, when done or when giving u
 agent-merge-lock queue                      # who holds it, who is waiting
 ```
 
-Each command ends with one machine-readable line — `ACQUIRED`, `WAITING`,
-`STALE`, `NOT_PREPARED`, `CONFLICT`, `BLOCKED`, `LANDED`, `RELEASED` — and exits
+Each command ends with one machine-readable line out of `ACQUIRED`, `WAITING`,
+`STALE`, `NOT_PREPARED`, `CONFLICT`, `BLOCKED`, `LANDED` and `RELEASED`, and exits
 with a code that says the same thing: `0` done, `75` still waiting (call again),
 `65` real work is needed (moved tip, conflict, failed check), `66` blocked by
 another session's uncommitted files, `69` not the owner.
@@ -79,7 +79,7 @@ the worktree that holds it, so when a killed session is restarted with
 |---|---|---|
 | `HELD_BY_ME` | The lock survived the interruption and is still this worktree's | Check whether the merge already happened (`git log <target>`), then finish it or `release` |
 | `HELD_BY_OTHER` | Somebody else is landing now | `acquire` again and wait; do not touch the integration branch |
-| `QUEUED` | The place in line survived, the lock is free | `acquire` — the turn is available |
+| `QUEUED` | The place in line survived, the lock is free | `acquire`, the turn is available |
 | `FREE` | Nothing was in flight | Start the normal two-half sequence |
 
 Never begin a resume by inspecting git; begin it with `status`. A lock held by
@@ -100,7 +100,7 @@ and release it rather than holding it across a long fix.
 ## When the integration branch is checked out elsewhere
 
 Usually the integration branch is checked out in the main working copy, which
-often belongs to a different session with uncommitted work in it — the ordinary
+often belongs to a different session with uncommitted work in it, the ordinary
 state of a machine running several agents. `land` merges there anyway and lets
 git make the safety call: if the incoming merge would touch files that session
 has uncommitted, git refuses and changes nothing, and the run reports `BLOCKED`
@@ -115,7 +115,7 @@ out the integration branch by hand to land work.
 
 Give the brief the landing sequence, not a branch name and a hope. A report says
 which state word the landing ended on, and a blocked landing names the holder or
-the checkout that stands in the way — `queue` prints both — instead of saying a
+the checkout that stands in the way, since `queue` prints both, instead of saying a
 merge "was not possible".
 
 Repositories with a different integration branch pass `--into NAME`, and the

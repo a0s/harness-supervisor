@@ -4,8 +4,8 @@ Read before running a server, an external application, or a heavy test runner
 in work that may execute beside another agent.
 
 This is about resources shared across the whole machine. The one resource shared
-inside a single project — its integration branch, which every agent eventually
-merges into — is queued rather than leased; `landing.md` covers it.
+inside a single project, its integration branch, which every agent eventually
+merges into, is queued rather than leased; `landing.md` covers it.
 
 A worktree isolates files. It does not isolate the machine. TCP ports, a single
 external application, a device, a shared database, and CPU are host-global: two
@@ -30,7 +30,7 @@ nobody can verify. The registry replaces the note.
 
 `agent-lease` (shipped at `harness/bin/agent-lease`, installed as
 `.agents/bin/agent-lease`) leases a resource, runs one command, and releases on
-exit — including on a signal or a crash.
+exit, including on a signal or a crash.
 
 ```sh
 agent-lease port --env PLAYWRIGHT_PORT -- npx playwright test
@@ -48,7 +48,7 @@ agent-lease reap
   is how a machine caps concurrent heavy runners.
 - Both are re-entrant within one process tree, so a wrapped script may lease the
   same name again without deadlocking.
-- Leases live in `~/.agents/leases` — host-global on purpose, because the
+- Leases live in `~/.agents/leases`, host-global on purpose, because the
   conflict is host-global. One file per resource, created with `O_EXCL`, so the
   claim is atomic and needs no registry lock.
 - A lease whose owner process is gone is reclaimed automatically. A crashed run
@@ -79,5 +79,5 @@ Three checks for a correctly wired runner:
 
 A brief that hands out a fixed port number is a defect. Give the lease command
 instead. When a run is blocked waiting for a held resource, say which pid and
-which working directory hold it — `agent-lease list` prints both — rather than
+which working directory hold it, since `agent-lease list` prints both, rather than
 reporting a timeout with no owner.

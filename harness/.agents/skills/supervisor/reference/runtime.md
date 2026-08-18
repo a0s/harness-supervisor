@@ -1,4 +1,4 @@
-# Runtime adapter — Codex and Claude Code
+# Runtime adapter: Codex and Claude Code
 
 Read this once when the delegated lane is selected, before spawning anything,
 and again when a run resumes under a different harness.

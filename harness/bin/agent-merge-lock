@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// agent-merge-lock — one agent at a time lands work on a project's integration
+// agent-merge-lock: one agent at a time lands work on a project's integration
 // branch.
 //
 // Parallel agents work in separate worktrees happily and then collide at the
@@ -22,8 +22,8 @@
 //   agent-merge-lock queue
 //   agent-merge-lock break --reason TEXT
 //
-// The lock lives inside the project itself — under the shared git directory all
-// of a project's worktrees already have in common — so two projects on one
+// The lock lives inside the project itself, under the shared git directory all
+// of a project's worktrees already have in common, so two projects on one
 // machine never queue behind each other, and the files are impossible to commit
 // by accident.
 //
@@ -259,7 +259,7 @@ function reap(dir, ttl, ticketTtl) {
         unlinkSync(holderPath(dir))
         note(dir, `broke lock of ${holder.owner} after ${idle}s of silence (ttl ${limit}s)`)
         process.stderr.write(
-          `agent-merge-lock: took over from ${holder.owner}, silent for ${idle}s (ttl ${limit}s) — recorded in history.log\n`,
+          `agent-merge-lock: took over from ${holder.owner}, silent for ${idle}s (ttl ${limit}s), recorded in history.log\n`,
         )
       } catch {
         /* raced with another reaper */
@@ -511,8 +511,8 @@ function commandQueue(repo, target, options) {
   }
 }
 
-// The whole point of the short-lock strategy: everything slow — merging the
-// integration branch into the feature branch and running the full suite — has
+// The whole point of the short-lock strategy: everything slow, meaning merging
+// the integration branch into the feature branch and running the full suite, has
 // already happened in the caller's own worktree, outside the lock. What is left
 // is a few seconds of ref movement, so a session dying while holding the lock
 // is unlikely rather than routine.
@@ -692,7 +692,7 @@ async function commandLand(repo, target, options) {
 }
 
 // Every unsuccessful landing gives the lock back by default. Whatever is wrong
-// — a moved tip, a conflict, a failed check, somebody else's uncommitted work —
+// (a moved tip, a conflict, a failed check, somebody else's uncommitted work)
 // is fixed outside the lock, and a queue that waits for that fix is the failure
 // this tool exists to prevent. --keep-lock opts out for a fix known to be quick.
 function bail(dir, identity, options, lines, machine, code) {
@@ -720,7 +720,7 @@ function removeTemporary(path) {
 
 // ---------------------------------------------------------------- cli
 
-const USAGE = `agent-merge-lock — take turns landing work on a project's integration branch
+const USAGE = `agent-merge-lock: take turns landing work on a project's integration branch
 
   agent-merge-lock acquire [--into master] [--wait 540] [--ttl 3600] [--label TEXT]
       Wait for the lock and take it. Ownership belongs to this worktree, not to

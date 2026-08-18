@@ -19,7 +19,7 @@ every handoff duplicates context and can lose detail.
 This harness is designed to be the repository's single process skill. Repository
 instructions always override it.
 
-## References — read only when triggered
+## References: read only when triggered
 
 | File | Read it when |
 |---|---|
@@ -43,11 +43,11 @@ evidence, not unconditional reasons to add agents; the gates below decide.
   except a tiny correction after an implementer has landed almost all of a WP.
 - Never pay reasoning-model rates for grep, counts, monitoring, or rerunning one
   known command.
-- Never let two agents edit the same file, or share a worktree, concurrently —
+- Never let two agents edit the same file, or share a worktree, concurrently,
   including after a restart, when a misjudged liveness call is likeliest.
 - A worktree isolates files, not the machine. Lease every host-global resource a
-  command touches — ports, an external application, a device, heavy runner
-  slots — and never hardcode or hand-pick a port.
+  command touches: ports, an external application, a device, heavy runner
+  slots. Never hardcode or hand-pick a port.
 - The integration branch is one more shared resource. Merge into it only while
   holding the project's merge lock, do the preparation and the checks outside
   that lock, and release it as soon as the merge is in. Reviewed work that never
@@ -92,20 +92,20 @@ When this lane is selected, read `reference/runtime.md` once before spawning.
 Use its exact runtime-specific models, effort fields, role names, and tool map;
 never translate model tiers by analogy.
 
-## Phase 0 — Anchor to the goal
+## Phase 0: anchor to the goal
 
 Read the injected project goal/status/plan. State in one line whether the task
 serves it, is owner-approved adjacent work, or conflicts with it. Ask only when
 the priority really branches the work. Standing fences: no adjacent refactor,
 unrequested feature, dependency update, or widened blast radius.
 
-## Phase 1 — Diagnose before planning
+## Phase 1: diagnose before planning
 
 Read the source. For each symptom, give the cause with `file:line` and mechanism.
 Never delegate that judgment. A scout may return exact locations or command
 output when the search itself is mechanical.
 
-## Phase 2 — Resolve branching decisions
+## Phase 2: resolve branching decisions
 
 Ask only about choices that lead to materially different work. Recommend one
 option first; for layout or interaction choices, include a small ASCII preview.
@@ -114,7 +114,7 @@ Decide non-branching defaults and state them.
 Record durable architecture choices, rejected approaches, and costly
 workarounds as decision records using `reference/state-layout.md`.
 
-## Phase 3 — Write durable intent
+## Phase 3: write durable intent
 
 For delegated or interruption-prone work, create
 `.agents/state/<topic>/TODO.md` before execution. Each WP contains only:
@@ -133,7 +133,7 @@ The plan holds intent; WP files hold mutable truth. Update a WP after a material
 state transition and before handing it to another agent. Do not journal scout
 chatter that changes neither `last-good` nor `next-action`.
 
-## Phase 4 — Brief narrowly
+## Phase 4: brief narrowly
 
 Before spawning, persist `BRIEF_<supervisor-id>.md` and ledger ownership. Record
 runtime, role definition, requested model/effort, effective overrides if known,
@@ -223,7 +223,7 @@ agents it spawned; each supervisor restores its own children before new work.
 Require a compact supervisor report:
 
 1. Per WP: changed files, behavior, exact checks/results, deliberate exclusions.
-2. Final health-check counts and failures, not “all passed.”
+2. Final health-check counts and failures, rather than "all passed".
 3. Plan deviations and unplanned findings, with no unprompted fix.
 4. Manual eyeball items and continuity events.
 5. Runtime, role, requested/effective model and effort, and usage when exposed.
@@ -244,8 +244,9 @@ when done, then remove the worktree. Follow repository instructions when they
 define a different branch or worktree command.
 
 The last step is where parallel agents collide, so it is queued rather than
-negotiated. Prepare outside the lock — merge the integration tip into the
-branch, resolve conflicts, run the checks — then land under it:
+negotiated. Prepare outside the lock, where merging the integration tip into the
+branch, resolving conflicts and running the checks all happen, then land under
+it:
 
 ```sh
 git merge master && <checks>                       # in the agent's own worktree

@@ -33,7 +33,7 @@ The plan says what should happen; the WP file says what has happened.
 Rewrite the whole `wp-N.md` after each material transition and before handoff:
 
 ```text
-# WP-3 — scroll position preservation
+# WP-3: scroll position preservation
 status:      in-progress | done | blocked | needs-restart
 owner:       supervisor-1 <agent-id> / implementer <agent-id>
 last-good:   work actually finished and verified

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// agent-lease — host-wide leases for resources a worktree cannot isolate.
+// agent-lease: host-wide leases for resources a worktree cannot isolate.
 //
 // A git worktree isolates files. It does not isolate the machine: TCP ports, a
 // single external application, and CPU are host-global. Two agents working on
@@ -280,7 +280,7 @@ function commandList(asJson) {
       continue
     }
     const head = `${row.resource.padEnd(22)} ${row.state.padEnd(5)} pid ${String(row.pid).padEnd(7)} ${row.age.padEnd(5)}`
-    process.stdout.write(`${head} ${row.label ? row.label + ' — ' : ''}${row.cwd}\n`)
+    process.stdout.write(`${head} ${row.label ? row.label + ' · ' : ''}${row.cwd}\n`)
   }
 }
 
@@ -324,7 +324,7 @@ function parseFlags(flags, positional) {
   return { options, rest }
 }
 
-const USAGE = `agent-lease — host-wide leases for ports and exclusive resources
+const USAGE = `agent-lease: host-wide leases for ports and exclusive resources
 
   agent-lease port [--range 5300-5399] [--env VAR,VAR] [--wait SECONDS] -- cmd ...
       Lease one free, actually bindable port and run cmd with AGENT_LEASE_PORT
