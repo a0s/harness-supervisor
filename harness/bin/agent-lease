@@ -24,7 +24,10 @@ import { spawn } from 'node:child_process'
 import net from 'node:net'
 
 const REGISTRY = process.env.AGENT_LEASE_DIR || join(homedir(), '.agents', 'leases')
-const DEFAULT_RANGE = process.env.AGENT_LEASE_PORT_RANGE || '5300-5499'
+// Deliberately narrow. A leased range must not overlap a range some tool picks
+// from by probing, or the two hand out the same port and the registry stops
+// being the whole truth. 100 ports is far more than a machine runs at once.
+const DEFAULT_RANGE = process.env.AGENT_LEASE_PORT_RANGE || '5300-5399'
 
 function die(message, code = 64) {
   process.stderr.write(`agent-lease: ${message}\n`)
@@ -120,7 +123,7 @@ async function bindable(port) {
 
 function parseRange(text) {
   const match = /^(\d+)-(\d+)$/.exec(text)
-  if (!match) die(`port range must look like 5300-5499, got: ${text}`)
+  if (!match) die(`port range must look like 5300-5399, got: ${text}`)
   const from = Number(match[1])
   const to = Number(match[2])
   if (from < 1024 || to > 65535 || from > to) die(`unusable port range: ${text}`)
@@ -323,7 +326,7 @@ function parseFlags(flags, positional) {
 
 const USAGE = `agent-lease — host-wide leases for ports and exclusive resources
 
-  agent-lease port [--range 5300-5499] [--env VAR,VAR] [--wait SECONDS] -- cmd ...
+  agent-lease port [--range 5300-5399] [--env VAR,VAR] [--wait SECONDS] -- cmd ...
       Lease one free, actually bindable port and run cmd with AGENT_LEASE_PORT
       set. Every name given to --env receives the same number.
 
