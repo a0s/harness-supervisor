@@ -137,13 +137,18 @@ chatter that changes neither `last-good` nor `next-action`.
 State written inside a worktree is published to the main checkout the moment the
 topic directory exists, with `.agents/bin/agent-state link` from that worktree,
 and unpublished with `agent-state unlink` when the topic closes or the worktree
-is torn down. It is never committed: gitignore `.agents/state/` in the repository,
-because a tracked topic directory rides an ordinary merge into the integration
-branch and lands past that rule unnoticed. A plan that outlives its run — a
-roadmap of blocks, one worktree each — is the case that gets lost here; read
-`reference/state-layout.md` before writing one. The owner watches one directory rather than walking every worktree;
+is torn down. The owner watches one directory rather than walking every worktree;
 `agent-state list` prints every topic in the project with its work-package counts
 and anything blocked.
+
+None of it is ever committed: gitignore `.agents/state/` in the repository,
+because a tracked topic directory rides an ordinary merge into the integration
+branch and lands past that rule unnoticed. Git is therefore not a backup of it
+either, so a plan that outlives its run — a roadmap of blocks, one worktree
+each — is handed to the next block's worktree with `agent-state handover
+<topic> <worktree>` as part of landing that block, never left behind in a
+worktree about to be removed. Read `reference/state-layout.md` before writing
+one.
 
 ## Phase 4: brief narrowly
 
@@ -255,9 +260,12 @@ Before any edit, inspect status and preserve inherited changes. Isolated work
 uses a separate worktree when the repository and runtime support it: branch from
 the current local integration branch rather than a potentially stale remote,
 publish its state with `agent-state link`, commit the reviewed result there,
-merge it into the local integration branch when done, then `agent-state unlink`
-and remove the worktree. Follow repository instructions when they
-define a different branch or worktree command.
+merge it into the local integration branch when done, then hand on or delete
+anything in its state that must outlive the run — for a roadmap that is
+`agent-state handover <topic> <next-worktree>`, and it happens before the tree
+goes, because the state is unversioned and goes with it — and finish with
+`agent-state unlink` and removing the worktree. Follow repository instructions
+when they define a different branch or worktree command.
 
 The last step is where parallel agents collide, so it is queued rather than
 negotiated. Prepare outside the lock, where merging the integration tip into the

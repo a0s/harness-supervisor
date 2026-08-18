@@ -34,7 +34,7 @@ exclusive.
 outside the lock, in my own worktree:
     git merge master            # bring the integration tip in
     resolve conflicts, run the required checks
-    git diff --name-only master...HEAD | grep '^\.agents/state/'   # must print NOTHING
+    git ls-files .agents/state  # must print NOTHING, state never lands
     git rev-parse master        # remember this as the base
 
 under the lock, seconds:
@@ -45,11 +45,17 @@ The `.agents/state/` check is there because it has already gone wrong once: a
 worktree had committed its own topic directory, and landing that branch carried
 run state into the integration branch through an ordinary merge — past the rule
 that says the main checkout holds only `agent-state` symlinks, with nobody doing
-anything wrong. Git cannot see the harness's rule, so the repository has to
-gitignore `.agents/state/` and the landing has to look. If the grep prints
-anything, take those files out of the branch first: a plan that must outlive the
-run belongs to the project trace or is handed to the next worktree by hand
-(`reference/state-layout.md`, "Three lifetimes").
+anything wrong. Git cannot see the harness's rule, so the repository gitignores
+`.agents/state/` and the landing looks anyway.
+
+`ls-files` rather than a diff against the integration branch, on purpose: a diff
+shows only what this branch changed, so state that was already tracked before
+the branch started is exactly what it does not show. If it prints anything, fix
+it on the branch before landing — add `.agents/state/` to `.gitignore`, then
+`git rm -r --cached .agents/state`, because ignoring never untracks — and commit
+that. What was in those files and must outlive the run goes to the project
+trace, or to the next block's worktree with `agent-state handover <topic>
+<worktree>` (`reference/state-layout.md`, "Three lifetimes").
 
 `land` takes the lock, refuses if the integration branch moved past `--base`,
 refuses if the tip was never merged into the branch (that means the tested tree

@@ -159,6 +159,7 @@ worktree's topics into the main checkout as symlinks the moment they exist:
 ```sh
 agent-state link          # inside a worktree, after creating .agents/state/<topic>/
 agent-state list          # every topic in the project, in one screen
+agent-state handover <topic> <worktree>   # give it to the worktree taking over
 agent-state unlink        # when the topic closes or the worktree is torn down
 agent-state prune         # drop links whose worktree is gone
 ```
@@ -169,13 +170,24 @@ agent-state prune         # drop links whose worktree is gone
 - Nothing leaks into history. Real topics never contain `@`, so one rule in the
   repository's local `info/exclude` covers every link and no `git add -A` can
   stage one.
+- Nothing is committed either. Run state is scaffolding, not history: the
+  repository gitignores `.agents/state/`, because a tracked topic directory rides
+  an ordinary merge onto the integration branch and lands there unnoticed, past
+  the rule that the main checkout holds only links. Every command says so when it
+  finds tracked state, and the landing sequence checks before merging.
+- Nothing is lost in the handover. Git is not a backup once state is unversioned,
+  so a plan that outlives one run — a roadmap worked one block per worktree —
+  moves with `handover`: the directory, the new link and the old link in one step
+  that either does all three or changes nothing, instead of three things to
+  remember while tearing a worktree down. `unlink` says so too when the topic it
+  is dropping carries a `ROADMAP.md`.
 - Nothing hides. `list` reads every worktree, not just the published ones, so a
   topic an interrupted agent never linked still shows up, marked as not linked.
   Each row carries work-package counts, whatever is blocked, an in-flight
   landing, and how long ago it moved.
-- Inherited copies stay quiet. A worktree branched from the integration branch
-  carries every committed topic, and `link` and `list` skip the ones this
-  worktree has not touched, so only real work shows.
+- Inherited copies stay quiet. A worktree branched from a repository that tracked
+  its state before the rule above carries every committed topic, and `link` and
+  `list` skip the ones this worktree has not touched, so only real work shows.
 
 The links are part of the process rather than an afterthought: the skill
 publishes state when a worktree topic is created, `agent-state list` opens the

@@ -9,7 +9,7 @@ decision record.
 |---|---|---|
 | Project | `WORKLOG.md` or the repository's equivalent | Goal, durable status, dated log, decisions, key coordinates |
 | One run | `.agents/state/<topic>/` | Batch plan, per-WP status, agent ledger, exact spawn briefs |
-| Many runs — a **roadmap** | `.agents/state/<topic>/TODO.md`, owned by the worktree working the current block | Goal, the owner's standing rulings, the blocks NOT yet done, constraints that still bite |
+| Many runs — a **roadmap** | `.agents/state/<topic>/ROADMAP.md`, owned by the worktree working the current block | Goal, the owner's standing rulings, the blocks NOT yet done, constraints that still bite |
 
 Run state is recovery scaffolding. Delete a finished topic after its durable
 result has reached the project log; an empty `.agents/state/` is normal. Do not
@@ -18,7 +18,10 @@ already defines a project trace.
 
 A roadmap is the third case and the one that gets lost, because it looks like run
 state and outlives every run that touches it: work planned as N blocks, one
-worktree per block, weeks apart. Four rules keep it honest.
+worktree per block, weeks apart. It gets its own filename for that reason:
+`TODO.md` is one run's intent and does not change once written, `ROADMAP.md` is
+the plan across runs and is rewritten constantly. One file cannot be both, and a
+topic that is a block of a larger plan holds both. Four rules keep it honest.
 
 **It only holds what exists nowhere else.** Goal, the owner's rulings and
 decisions that are not yet code, the blocks still to do, and the traps that still
@@ -28,28 +31,43 @@ those, a recovered law is a comment beside the code implementing it. So a roadma
 SHRINKS as the work lands. One that grows is duplicating a record that already
 exists somewhere it will be read.
 
-**Emptying it is part of landing a block, not a later tidy.** The block that lands
-moves its own findings out and deletes its section in the same commit. Left for
-later, the deletion never happens and the file becomes a second, drifting history.
+**Emptying it is part of landing a block, not a later tidy.** The block that
+lands moves its own findings out and deletes its section in the same commit.
+Left for later, the deletion never happens and the file becomes a second,
+drifting history.
 
 **One owner, always the worktree working the current block.** Publish it with
-`agent-state link` from there. Landing a block hands it to the next block's
-worktree by hand — copy in under the next name, link from there, delete from
-here — or deletes it if nothing is left to do. A roadmap with no worktree is
-nobody's, and the next reader cannot tell whether it is live or abandoned.
+`agent-state link` from there. Landing a block hands it on in one command:
 
-**It never enters version control.** This is the rule the other three depend on and
-the one a repository has to enforce, because git cannot see the harness: with the
-topic directory tracked, landing a branch carries it into the integration branch
-through an ordinary merge, straight past "the main checkout holds only links".
-Gitignore `.agents/state/` in the repository, and check the branch carries none of
-it before landing.
+```sh
+agent-state handover <topic> <next-worktree> [--rename <next-topic>]
+```
+
+which moves the directory, publishes it from its new home and drops the old link,
+or refuses and changes nothing. Do it while landing, not afterwards: the roadmap
+lives in a worktree that is about to be removed and git is not holding a copy, so
+"later" is how the plan is lost. If nothing is left to do, delete it instead. A
+roadmap with no worktree is nobody's, and the next reader cannot tell whether it
+is live or abandoned.
+
+**It never enters version control.** This is the rule the other three depend on
+and the one a repository has to enforce, because git cannot see the harness:
+with the topic directory tracked, landing a branch carries it into the
+integration branch through an ordinary merge, straight past "the main checkout
+holds only links".
+Gitignore `.agents/state/`; if it was tracked before, `git rm -r --cached
+.agents/state` once, because an ignore rule never untracks what the index
+already holds. `agent-state` says the same when it finds tracked state, and the
+landing sequence checks. The cost of this rule is that git is no longer a backup
+of the plan — which is precisely why handing over belongs to landing a block
+rather than to a later tidy.
 
 ## Topic directory
 
 ```text
 .agents/state/<topic>/
-  TODO.md                 immutable intent and WP list
+  TODO.md                 immutable intent and WP list for this run
+  ROADMAP.md              the plan across runs, when this topic is one block of it
   AGENTS.md               root-owned agent ledger
   BRIEF_supervisor-1.md   exact persisted spawn brief
   wp-3.md                 mutable truth for one WP
@@ -152,9 +170,28 @@ own log rules when they are more specific.
 
 ## Commits
 
-Normally commit run state with the work it describes. If the owner explicitly
-requests a state-only commit, use the runtime-neutral `meta(supervisor):` prefix.
-Never commit a `done` status without the corresponding work in that tree.
+Nothing under `.agents/state/` is committed. It is scaffolding for a run in
+progress, not history, and a tracked topic directory rides an ordinary merge onto
+the integration branch — not a hypothesis, it has happened, and it is what the
+gitignore rule above and the check in `reference/landing.md` exist to stop.
+
+So whatever must survive the run leaves the state directory under its own power,
+in the commit that lands the work:
+
+- what shipped: one dated line in the project log;
+- a decision whose rejected alternatives matter: a decision record in the project
+  trace, in the form above;
+- a measured difference or a recovered law: an entry wherever the repository keeps
+  those, or a comment beside the code that implements it;
+- what is still to do: the roadmap, handed to the next block's worktree.
+
+Never report a WP `done` whose work is not in that tree: the state file is local
+and unversioned, so the commit is the only evidence anyone else will ever see. An
+owner who explicitly asks for a state-only commit, in a repository that has
+chosen to track its state, gets one under the runtime-neutral `meta(supervisor):`
+prefix — knowing that the branch now carries state onto the integration branch
+when it lands, and that taking it back out is a separate commit.
+
 Commit messages use an English subject and a useful body derived from the
 reviewed diff and real checks: why, what, and how verified. Repository rules may
 add a stricter prefix or workflow.
