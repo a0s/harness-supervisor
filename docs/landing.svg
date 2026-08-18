@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="640" viewBox="0 0 900 640" role="img" aria-labelledby="title desc">
+  <title id="title">Three agents queue for the integration branch</title>
+  <desc id="desc">Each agent prepares in its own worktree with no lock held, then holds the merge lock for a few seconds to land. Agent C asks for the lock while A holds it and waits its turn. A status row lists the four state words a resumed session can see, and three cards cover expiry, refused landings and another session's uncommitted work.</desc>
+  <defs>
+    <marker id="arrow-slate" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#64748b"/>
+    </marker>
+    <pattern id="queued-hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="8" height="8" fill="#f1f5f9"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#94a3b8" stroke-width="3"/>
+    </pattern>
+    <style>
+      .canvas { fill: #ffffff; }
+      .heading { font: 700 21px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+      .subheading { font: 500 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .panel { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1.5; }
+      .panel-title { font: 700 13.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #334155; }
+      .panel-sub { font: 500 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .lane-label { font: 700 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #334155; }
+      .lane-sub { font: 500 9.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #64748b; }
+      .prepare { fill: #ecfdf5; stroke: #059669; stroke-width: 2; }
+      .queued { fill: url(#queued-hatch); stroke: #64748b; stroke-width: 1.5; }
+      .held { fill: #fef3c7; stroke: #ca8a04; stroke-width: 2; }
+      .free-seg { fill: #f1f5f9; stroke: #cbd5e1; stroke-width: 1.2; }
+      .block-text { font: 600 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #065f46; text-anchor: middle; }
+      .held-text { font: 700 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #854d0e; text-anchor: middle; }
+      .free-text { font: 600 10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #94a3b8; text-anchor: middle; }
+      .small-note { font: 700 10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .axis { fill: none; stroke: #64748b; stroke-width: 1.5; }
+      .state-chip { fill: #ffffff; stroke: #7c3aed; stroke-width: 1.5; }
+      .state-word { font: 700 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #6d28d9; }
+      .state-desc { font: 500 10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .card { fill: #ffffff; stroke: #94a3b8; stroke-width: 1.5; }
+      .card-title { font: 700 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+      .card-text { font: 500 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #334155; }
+      .legend { font: 600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #334155; }
+    </style>
+  </defs>
+
+  <rect class="canvas" width="900" height="640"/>
+  <text class="heading" x="450" y="32" text-anchor="middle">One branch, many agents, one turn at a time</text>
+  <text class="subheading" x="450" y="54" text-anchor="middle">Every agent prepares in its own worktree with no lock held, and holds the lock only for the merge itself</text>
+
+  <rect class="panel" x="14" y="72" width="872" height="272" rx="12"/>
+  <text class="panel-title" x="32" y="97">Three agents landing on master</text>
+  <text class="panel-sub" x="268" y="97">C asks for the lock while A holds it, so C waits seconds instead of a test run</text>
+
+  <text class="lane-label" x="32" y="132">Agent A</text>
+  <text class="lane-sub" x="32" y="147">worktree-a</text>
+  <text class="lane-label" x="32" y="190">Agent B</text>
+  <text class="lane-sub" x="32" y="205">worktree-b</text>
+  <text class="lane-label" x="32" y="248">Agent C</text>
+  <text class="lane-sub" x="32" y="263">worktree-c</text>
+  <text class="lane-label" x="32" y="313">merge lock</text>
+
+  <rect class="prepare" x="170" y="110" width="260" height="48" rx="8"/>
+  <text class="block-text" x="300" y="131">merge master · resolve · run the suite</text>
+  <text class="block-text" x="300" y="147">no lock held</text>
+  <rect class="held" x="438" y="110" width="54" height="48" rx="8"/>
+  <text class="held-text" x="465" y="140">land</text>
+
+  <rect class="prepare" x="170" y="168" width="490" height="48" rx="8"/>
+  <text class="block-text" x="415" y="189">merge master · resolve · run the suite</text>
+  <text class="block-text" x="415" y="205">a longer suite costs nobody else a turn</text>
+  <rect class="held" x="668" y="168" width="54" height="48" rx="8"/>
+  <text class="held-text" x="695" y="198">land</text>
+
+  <rect class="prepare" x="170" y="226" width="282" height="48" rx="8"/>
+  <text class="block-text" x="311" y="247">merge master · resolve · run the suite</text>
+  <text class="block-text" x="311" y="263">no lock held</text>
+  <rect class="queued" x="458" y="226" width="34" height="48" rx="8"/>
+  <rect class="held" x="500" y="226" width="54" height="48" rx="8"/>
+  <text class="held-text" x="527" y="256">land</text>
+  <text class="small-note" x="566" y="255">C queued behind A</text>
+
+  <rect class="free-seg" x="170" y="290" width="268" height="36" rx="6"/>
+  <text class="free-text" x="304" y="313">free</text>
+  <rect class="held" x="438" y="290" width="54" height="36" rx="6"/>
+  <text class="held-text" x="465" y="313">A</text>
+  <rect class="held" x="500" y="290" width="54" height="36" rx="6"/>
+  <text class="held-text" x="527" y="313">C</text>
+  <rect class="free-seg" x="562" y="290" width="100" height="36" rx="6"/>
+  <text class="free-text" x="612" y="313">free</text>
+  <rect class="held" x="668" y="290" width="54" height="36" rx="6"/>
+  <text class="held-text" x="695" y="313">B</text>
+  <rect class="free-seg" x="730" y="290" width="142" height="36" rx="6"/>
+  <text class="free-text" x="801" y="313">free</text>
+
+  <path class="axis" marker-end="url(#arrow-slate)" d="M 170 336 L 820 336"/>
+  <text class="lane-sub" x="832" y="340">time</text>
+
+  <text class="panel-title" x="14" y="372">After any interruption, status answers first</text>
+
+  <rect class="state-chip" x="14" y="384" width="208" height="72" rx="9"/>
+  <text class="state-word" x="30" y="408">HELD_BY_ME</text>
+  <text class="state-desc" x="30" y="426">The lock survived the kill.</text>
+  <text class="state-desc" x="30" y="442">Finish the merge, or release.</text>
+
+  <rect class="state-chip" x="233" y="384" width="208" height="72" rx="9"/>
+  <text class="state-word" x="249" y="408">HELD_BY_OTHER</text>
+  <text class="state-desc" x="249" y="426">Somebody is landing now.</text>
+  <text class="state-desc" x="249" y="442">Acquire again and wait.</text>
+
+  <rect class="state-chip" x="452" y="384" width="208" height="72" rx="9"/>
+  <text class="state-word" x="468" y="408">QUEUED</text>
+  <text class="state-desc" x="468" y="426">Your place in line survived</text>
+  <text class="state-desc" x="468" y="442">and the lock is free. Acquire.</text>
+
+  <rect class="state-chip" x="671" y="384" width="208" height="72" rx="9"/>
+  <text class="state-word" x="687" y="408">FREE</text>
+  <text class="state-desc" x="687" y="426">Nothing was in flight.</text>
+  <text class="state-desc" x="687" y="442">Start the two halves.</text>
+
+  <rect class="card" x="14" y="478" width="280" height="112" rx="10"/>
+  <text class="card-title" x="32" y="502">A dead owner does not freeze the queue</text>
+  <text class="card-text" x="32" y="522">The lock expires after an hour by default,</text>
+  <text class="card-text" x="32" y="537">and every command its owner runs pushes</text>
+  <text class="card-text" x="32" y="552">that back. The next agent takes it over</text>
+  <text class="card-text" x="32" y="567">and writes the takeover to history.log.</text>
+
+  <rect class="card" x="307" y="478" width="280" height="112" rx="10"/>
+  <text class="card-title" x="325" y="502">A failed landing gives the lock back</text>
+  <text class="card-text" x="325" y="522">land refuses a tip that moved past --base,</text>
+  <text class="card-text" x="325" y="537">and a branch that never merged that tip.</text>
+  <text class="card-text" x="325" y="552">The fix belongs outside the lock, so</text>
+  <text class="card-text" x="325" y="567">nobody waits in a queue for it.</text>
+
+  <rect class="card" x="600" y="478" width="280" height="112" rx="10"/>
+  <text class="card-title" x="618" y="502">Another session's work is safe</text>
+  <text class="card-text" x="618" y="522">master is usually checked out where</text>
+  <text class="card-text" x="618" y="537">somebody is still editing. land merges</text>
+  <text class="card-text" x="618" y="552">there and lets git decide, so an overlap</text>
+  <text class="card-text" x="618" y="567">is refused without touching a file.</text>
+
+  <rect x="150" y="608" width="30" height="14" rx="3" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+  <text class="legend" x="190" y="619">prepare in your own worktree, no lock</text>
+  <rect x="424" y="608" width="30" height="14" rx="3" fill="url(#queued-hatch)" stroke="#64748b" stroke-width="1.5"/>
+  <text class="legend" x="464" y="619">queued</text>
+  <rect x="530" y="608" width="30" height="14" rx="3" fill="#fef3c7" stroke="#ca8a04" stroke-width="1.5"/>
+  <text class="legend" x="570" y="619">lock held, seconds</text>
+</svg>

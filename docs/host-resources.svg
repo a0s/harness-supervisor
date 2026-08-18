@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="630" viewBox="0 0 900 630" role="img" aria-labelledby="title desc">
+  <title id="title">A hand-picked port collides across worktrees; a lease does not</title>
+  <desc id="desc">Above, two agents in separate worktrees both use port 5199, so the second test runner attaches to the first agent's server and reports a result about the wrong code. Below, agent-lease gives each agent its own port from a host-global registry of lease files.</desc>
+  <defs>
+    <marker id="arrow-red" viewBox="0 0 12 12" markerWidth="8" markerHeight="8" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#dc2626"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 12 12" markerWidth="8" markerHeight="8" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#059669"/>
+    </marker>
+    <style>
+      .canvas { fill: #ffffff; }
+      .panel { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1.5; }
+      .heading { font: 700 21px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+      .subheading { font: 500 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .panel-title { font: 700 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .panel-sub { font: 500 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .agent-card { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; }
+      .role { font: 700 12.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #111827; }
+      .cmd { font: 600 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #172033; }
+      .band { fill: #ffffff; stroke: #94a3b8; stroke-width: 1.5; }
+      .band-title { font: 700 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #334155; text-anchor: middle; }
+      .band-note { font: 500 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #64748b; text-anchor: middle; }
+      .hot-chip { fill: #fee2e2; stroke: #dc2626; stroke-width: 2; }
+      .lease-chip { fill: #ecfdf5; stroke: #059669; stroke-width: 2; }
+      .chip-big { font: 700 18px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #7f1d1d; text-anchor: middle; }
+      .lease-line { font: 700 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #14532d; }
+      .lease-sub { font: 10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #3f6212; }
+      .bad-card { fill: #fef2f2; stroke: #dc2626; stroke-width: 2; }
+      .good-card { fill: #ecfdf5; stroke: #059669; stroke-width: 2; }
+      .outcome-title { font: 700 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .outcome { font: 500 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #334155; }
+      .flow-bad { fill: none; stroke: #dc2626; stroke-width: 2.5; }
+      .flow-good { fill: none; stroke: #059669; stroke-width: 2.5; }
+      .edge-label { font: 700 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-anchor: middle; }
+      .note { font: 600 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #334155; text-anchor: middle; }
+    </style>
+  </defs>
+
+  <rect class="canvas" width="900" height="630"/>
+  <text class="heading" x="450" y="32" text-anchor="middle">A worktree isolates files, not the machine</text>
+  <text class="subheading" x="450" y="54" text-anchor="middle">Ports, one external application and CPU stay shared, so two agents collide through them and never find out</text>
+
+  <rect class="panel" x="14" y="72" width="872" height="240" rx="12"/>
+  <text class="panel-title" x="32" y="99" fill="#b91c1c">Hand-picked port</text>
+  <text class="panel-sub" x="178" y="99">both agents read the same instruction file</text>
+
+  <rect class="agent-card" x="32" y="114" width="228" height="72" rx="9"/>
+  <text class="role" x="50" y="137">Agent A · worktree-a</text>
+  <text class="cmd" x="50" y="157">npm run dev  → :5199</text>
+  <text class="cmd" x="50" y="174">playwright   → :5199</text>
+
+  <rect class="agent-card" x="32" y="200" width="228" height="72" rx="9"/>
+  <text class="role" x="50" y="223">Agent B · worktree-b</text>
+  <text class="cmd" x="50" y="243">npm run dev  → :5199</text>
+  <text class="cmd" x="50" y="260">playwright   → :5199</text>
+
+  <rect class="band" x="292" y="122" width="166" height="156" rx="9"/>
+  <text class="band-title" x="375" y="145">one machine</text>
+  <rect class="hot-chip" x="306" y="158" width="138" height="56" rx="8"/>
+  <text class="chip-big" x="375" y="195">:5199</text>
+  <text class="band-note" x="375" y="252">shared by every worktree</text>
+
+  <path class="flow-bad" marker-end="url(#arrow-red)" d="M 260 150 L 300 176"/>
+  <path class="flow-bad" marker-end="url(#arrow-red)" d="M 260 236 L 300 200"/>
+  <text class="edge-label" x="375" y="298" fill="#b91c1c">the same number, twice</text>
+
+  <rect class="bad-card" x="488" y="114" width="398" height="164" rx="10"/>
+  <text class="outcome-title" x="508" y="140" fill="#b91c1c">A green run about the wrong code</text>
+  <text class="outcome" x="508" y="167">B's runner finds :5199 already listening and attaches.</text>
+  <text class="outcome" x="508" y="188">It exercises Agent A's server and reports a pass.</text>
+  <text class="outcome" x="508" y="209">Nothing crashed, and no diff explains the result.</text>
+  <text class="outcome" x="508" y="230">The next agent reads "anything but 5199" and guesses again.</text>
+
+  <rect class="panel" x="14" y="328" width="872" height="240" rx="12"/>
+  <text class="panel-title" x="32" y="355" fill="#047857">agent-lease</text>
+  <text class="panel-sub" x="134" y="355">one owner at a time, released on exit or crash</text>
+
+  <rect class="agent-card" x="32" y="370" width="228" height="72" rx="9"/>
+  <text class="role" x="50" y="393">Agent A · worktree-a</text>
+  <text class="cmd" x="50" y="413">agent-lease port \</text>
+  <text class="cmd" x="50" y="430">  --env PORT -- npm test</text>
+
+  <rect class="agent-card" x="32" y="456" width="228" height="72" rx="9"/>
+  <text class="role" x="50" y="479">Agent B · worktree-b</text>
+  <text class="cmd" x="50" y="499">agent-lease port \</text>
+  <text class="cmd" x="50" y="516">  --env PORT -- npm test</text>
+
+  <rect class="band" x="292" y="370" width="166" height="170" rx="9"/>
+  <text class="band-title" x="375" y="392">~/.agents/leases</text>
+  <rect class="lease-chip" x="302" y="404" width="146" height="46" rx="7"/>
+  <text class="lease-line" x="316" y="424">port-51731</text>
+  <text class="lease-sub" x="316" y="440">pid 8123 · wt-a</text>
+  <rect class="lease-chip" x="302" y="462" width="146" height="46" rx="7"/>
+  <text class="lease-line" x="316" y="482">port-49215</text>
+  <text class="lease-sub" x="316" y="498">pid 8140 · wt-b</text>
+  <text class="band-note" x="375" y="528">one file per resource</text>
+
+  <path class="flow-good" marker-end="url(#arrow-green)" d="M 260 406 L 298 422"/>
+  <path class="flow-good" marker-end="url(#arrow-green)" d="M 260 492 L 298 478"/>
+
+  <rect class="good-card" x="488" y="370" width="398" height="164" rx="10"/>
+  <text class="outcome-title" x="508" y="396" fill="#047857">Every run tests its own tree</text>
+  <text class="outcome" x="508" y="423">A port is leased only if it is also free to bind.</text>
+  <text class="outcome" x="508" y="444">The lease dies with the command, even when it is killed.</text>
+  <text class="outcome" x="508" y="465">Each file carries its owner's pid, so a dead run frees it.</text>
+  <text class="outcome" x="508" y="486">hold NAME does the same for anything that is not a port.</text>
+
+  <text class="note" x="450" y="600">The registry layout is the contract, so a repository can vendor an equivalent tool and still interoperate.</text>
+</svg>
