@@ -17,5 +17,10 @@ when the skill routes to them.
   `.agents/bin/agent-lease`, and never hardcode or hand-pick a port. Wire the
   lease into the repository's own commands so the documented invocation is
   already safe to type.
+- Merging into the integration branch is queued, not negotiated. Prepare and run
+  the checks in your own worktree, then land through
+  `.agents/bin/agent-merge-lock land --branch <mine> --base <sha>`, and release
+  the lock as soon as the merge is in. After any interruption, run
+  `.agents/bin/agent-merge-lock status` before inspecting git.
 - Repository-specific product, safety, trace, test, and Git rules belong in the
   repository's own `AGENTS.md` and override the harness.

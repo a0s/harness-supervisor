@@ -28,6 +28,7 @@ instructions always override it.
 | `reference/continuity.md` | Resuming or rotating near 45% context |
 | `reference/failure-modes.md` | A run failed, or before the first supervisor brief for unfamiliar work |
 | `reference/host-resources.md` | Before running a server, external application, or heavy test runner another agent could also be running |
+| `reference/landing.md` | Before merging into the integration branch, and on any resume that may have a landing in flight |
 
 Do not preload all references. Historical fixes in `failure-modes.md` are
 evidence, not unconditional reasons to add agents; the gates below decide.
@@ -47,6 +48,10 @@ evidence, not unconditional reasons to add agents; the gates below decide.
 - A worktree isolates files, not the machine. Lease every host-global resource a
   command touches — ports, an external application, a device, heavy runner
   slots — and never hardcode or hand-pick a port.
+- The integration branch is one more shared resource. Merge into it only while
+  holding the project's merge lock, do the preparation and the checks outside
+  that lock, and release it as soon as the merge is in. Reviewed work that never
+  reaches the integration branch is not done.
 - A claim, green build, or agent summary is not verification.
 - Nothing needed for recovery may exist only in a conversation context.
 - Out-of-scope findings are reported, not silently fixed.
@@ -229,7 +234,7 @@ delete finished `.agents/state/<topic>/`; stale recovery state is misinformation
 
 Before switching topics, persist or close the current one explicitly.
 
-## Commits
+## Commits and landing
 
 Before any edit, inspect status and preserve inherited changes. Isolated work
 uses a separate worktree when the repository and runtime support it: branch from
@@ -237,6 +242,24 @@ the current local integration branch rather than a potentially stale remote,
 commit the reviewed result there, merge it into the local integration branch
 when done, then remove the worktree. Follow repository instructions when they
 define a different branch or worktree command.
+
+The last step is where parallel agents collide, so it is queued rather than
+negotiated. Prepare outside the lock — merge the integration tip into the
+branch, resolve conflicts, run the checks — then land under it:
+
+```sh
+git merge master && <checks>                       # in the agent's own worktree
+base=$(git rev-parse master)
+.agents/bin/agent-merge-lock land --branch <mine> --base "$base"
+```
+
+`land` waits for its turn, refuses a tip that moved past `--base` or a branch
+that was never tested against it, merges `--no-ff`, and releases. Exit 75 means
+the turn has not come yet and the queue place is saved: call it again. After any
+interruption the first command is `agent-merge-lock status`, before any git
+inspection. Read `reference/landing.md` for the state words, the resume table,
+and what happens when the integration branch is checked out in another session's
+working copy.
 
 No non-merge commit is ready without a useful English subject and body written
 from the reviewed diff and checks: **why**, **what**, and **how verified**,

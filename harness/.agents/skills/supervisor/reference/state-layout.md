@@ -40,6 +40,7 @@ last-good:   work actually finished and verified
 next-action: one concrete action a fresh agent can execute
 files:       touched paths in the inherited dirty tree
 worktree:    absolute path + branch, when this WP owns one
+landing:     not-started | prepared base=<sha> | lock-held | landed <sha>
 traps:       failed approaches or current blocker
 verified:    commands and real output, including counts/status
 updated:     <ISO timestamp>
@@ -50,6 +51,8 @@ Rules:
 - Keep `next-action` non-empty while work is in progress.
 - Require real output in `verified` before `done`.
 - Put a reason in `traps` before `blocked`.
+- Move `landing` on every transition, and never call a WP `done` while its
+  `landing` says `lock-held`: a lock nobody releases stops every other agent.
 - Update on changed code, completed checks, failed attempts that constrain the
   next step, handoff, rotation, or blocker. Do not journal scout chatter.
 - Read one WP during routine work; grep all WPs only during a resume sweep.

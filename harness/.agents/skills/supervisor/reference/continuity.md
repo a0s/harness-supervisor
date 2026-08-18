@@ -6,7 +6,19 @@ operations are runtime-specific.
 
 ## Root resume sweep
 
-1. Find unfinished work without preloading every topic:
+1. Ask whether a landing was interrupted, before inspecting git at all:
+
+   ```sh
+   .agents/bin/agent-merge-lock status
+   ```
+
+   The lock belongs to a worktree rather than to a process, so an interruption
+   does not lose it. `HELD_BY_ME` means this worktree still owns the integration
+   branch and must either finish the merge or release it; `QUEUED` means the
+   place in line survived; `HELD_BY_OTHER` means another agent is landing right
+   now and this one must not touch the branch. `reference/landing.md` holds the
+   full table.
+2. Find unfinished work without preloading every topic:
 
    ```sh
    grep -l 'status: *\(in-progress\|needs-restart\)' .agents/state/*/wp-*.md
@@ -14,12 +26,13 @@ operations are runtime-specific.
 
    Read only matches, their topic ledger, and persisted supervisor briefs. A
    missing/empty state directory means there is nothing to restore.
-2. Detect the current runtime and inspect liveness with only that runtime's
+3. Detect the current runtime and inspect liveness with only that runtime's
    controls.
-3. For every ledger row owning unfinished WPs, either contact the live owner or
+4. For every ledger row owning unfinished WPs, either contact the live owner or
    checkpoint the tree and start a fresh owner from files. Restore all topics,
    not only the first grep match.
-4. Tell the user which topics and WPs were restored before continuing work.
+5. Tell the user which topics and WPs were restored before continuing work, and
+   name any landing that was still in flight.
 
 ### Liveness by runtime
 

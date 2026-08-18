@@ -3,6 +3,10 @@
 Read before running a server, an external application, or a heavy test runner
 in work that may execute beside another agent.
 
+This is about resources shared across the whole machine. The one resource shared
+inside a single project — its integration branch, which every agent eventually
+merges into — is queued rather than leased; `landing.md` covers it.
+
 A worktree isolates files. It does not isolate the machine. TCP ports, a single
 external application, a device, a shared database, and CPU are host-global: two
 agents on unrelated branches still collide through them. The collision is worse

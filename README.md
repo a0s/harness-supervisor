@@ -59,7 +59,8 @@ supervisor links.
 - exact current Codex and Claude model/effort routing;
 - context rotation and cross-runtime recovery;
 - isolated worktrees, English commits, and evidence-bearing commit bodies;
-- leasing the host-global resources a worktree cannot isolate.
+- leasing the host-global resources a worktree cannot isolate;
+- taking turns on the integration branch so every agent's work actually lands.
 
 ## Host resources
 
@@ -84,6 +85,52 @@ its owner's pid so a dead run never burns a resource. The registry layout is the
 contract: a repository that must run its tests without the harness installed may
 vendor an equivalent tool and still interoperate. `reference/host-resources.md`
 holds the rule and the wiring checklist.
+
+## Landing on the integration branch
+
+Parallel agents are cheap and safe until the last step, when all of them want to
+merge into the same branch. Then they stall: each waits for a turn nobody hands
+out, or merges into a working copy another session is still editing, and the
+owner ends up arbitrating by hand.
+
+`harness/bin/agent-merge-lock` is installed as `.agents/bin/agent-merge-lock` and
+makes that a queue:
+
+```sh
+git merge master && npm test          # prepare and check outside the lock
+agent-merge-lock land --branch mine --base "$(git rev-parse master)"
+agent-merge-lock status               # first command after any interruption
+agent-merge-lock queue                # who holds it, who is waiting
+```
+
+What makes it survive an agent's real life:
+
+- **The lock is short.** Merging the tip in, resolving conflicts and running the
+  suite all happen in the agent's own worktree with no lock held; only the merge
+  itself is exclusive, so agents queue for seconds rather than for a test run.
+- **A worktree owns the lock, not a process.** When a session dies to a usage
+  limit mid-landing and comes back with `continue`, `status` answers the only
+  question that matters — `HELD_BY_ME`, `HELD_BY_OTHER`, `QUEUED` or `FREE` — and
+  a lock taken before the interruption is still there.
+- **Waiting is a normal answer.** One `acquire` waits up to 540 seconds so it
+  fits in a tool-call timeout, then exits 75 with the queue place kept on disk;
+  `--wait 0` waits indefinitely in the background. The queue is
+  first-come-first-served, so nobody is starved.
+- **A dead owner does not freeze the queue.** The lock expires (an hour by
+  default, pushed back by every command its owner runs) and the next agent takes
+  it over, printing the takeover and recording it in `history.log`.
+- **Nothing lands untested or unnoticed.** `land` refuses a tip that moved past
+  `--base` and a branch that never merged that tip, and every unsuccessful
+  landing hands the lock straight back, because the fix belongs outside it.
+- **Somebody else's uncommitted work is safe.** The integration branch is usually
+  checked out in a working copy another session is editing; `land` merges there
+  and lets git make the call, so an overlap is refused without changing a file
+  and no overlap lands cleanly. With the branch checked out nowhere, it merges in
+  a private worktree it removes afterwards.
+
+Lock files live inside the project's own shared git directory, so two projects on
+one machine never queue behind each other and no `git add -A` can sweep them up.
+`reference/landing.md` holds the sequence, the state words and the resume table.
 
 Consumer repositories still define their product boundaries, trace file,
 available test layers, branch names, merge-request policy, and any stricter

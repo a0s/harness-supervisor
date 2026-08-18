@@ -1,0 +1,818 @@
+#!/usr/bin/env node
+// agent-merge-lock — one agent at a time lands work on a project's integration
+// branch.
+//
+// Parallel agents work in separate worktrees happily and then collide at the
+// last step, when each of them wants to merge into master. The collision is not
+// a merge conflict; it is a coordination problem: nobody knows whose turn it is,
+// so they either wait forever out of politeness or step on a checkout somebody
+// else is using.
+//
+// This tool is the turn-taking mechanism. It is not agent-lease: a lease lives
+// exactly as long as the command it wraps, while landing work takes many
+// separate tool calls with model thinking between them, and it must survive the
+// session being killed mid-way. So ownership here is a worktree, not a process,
+// and it is written to a file that outlives every process involved.
+//
+//   agent-merge-lock acquire [--into master] [--base SHA] [--wait 540] [--ttl 3600]
+//   agent-merge-lock status  [--json]
+//   agent-merge-lock renew
+//   agent-merge-lock release [--force]
+//   agent-merge-lock land --branch NAME [--into master] [--base SHA] [--verify CMD]
+//   agent-merge-lock queue
+//   agent-merge-lock break --reason TEXT
+//
+// The lock lives inside the project itself — under the shared git directory all
+// of a project's worktrees already have in common — so two projects on one
+// machine never queue behind each other, and the files are impossible to commit
+// by accident.
+//
+// Every command prints a final machine-readable line beginning with a state
+// word (ACQUIRED, WAITING, STALE, BLOCKED, LANDED, ...) and exits with a code
+// that means the same thing, so an agent can branch on either.
+
+import { spawnSync } from 'node:child_process'
+import { openSync, writeSync, closeSync, readFileSync, writeFileSync, appendFileSync, unlinkSync, readdirSync, mkdirSync, rmSync } from 'node:fs'
+import { join, basename } from 'node:path'
+import { hostname } from 'node:os'
+
+const EXIT = {
+  ok: 0,
+  usage: 64,
+  conflict: 65, // merge conflict or a stale base: real work is needed, not a retry
+  blocked: 66, // somebody else's uncommitted work is in the way
+  notOwner: 69,
+  internal: 70,
+  waiting: 75, // the wait window expired; call again, the queue position is kept
+}
+
+const WAIT_DEFAULT = 540 // one call must fit inside a 600s tool timeout
+const TTL_DEFAULT = 3600 // an owner that goes silent this long is presumed dead
+const TICKET_TTL_DEFAULT = 900 // a queued agent that goes silent this long loses its place
+const POLL_MS = 2000
+
+function die(message, code = EXIT.usage) {
+  process.stderr.write(`agent-merge-lock: ${message}\n`)
+  process.exit(code)
+}
+
+function say(line) {
+  process.stdout.write(line + '\n')
+}
+
+function now() {
+  return new Date().toISOString()
+}
+
+function secondsSince(iso) {
+  const parsed = Date.parse(iso)
+  if (Number.isNaN(parsed)) return Infinity
+  return Math.max(0, Math.round((Date.now() - parsed) / 1000))
+}
+
+function git(args, options = {}) {
+  const result = spawnSync('git', args, {
+    cwd: options.cwd || process.cwd(),
+    encoding: 'utf8',
+    stdio: options.inherit ? ['ignore', 'inherit', 'inherit'] : ['ignore', 'pipe', 'pipe'],
+  })
+  if (result.error) die(`cannot run git: ${result.error.message}`, EXIT.internal)
+  const out = (result.stdout || '').trim()
+  const err = (result.stderr || '').trim()
+  if (result.status !== 0 && !options.allowFail) {
+    die(`git ${args.join(' ')} failed: ${err || out || `exit ${result.status}`}`, EXIT.internal)
+  }
+  return { status: result.status ?? 0, out, err }
+}
+
+// ---------------------------------------------------------------- repository
+
+function repoContext() {
+  const top = git(['rev-parse', '--show-toplevel'], { allowFail: true })
+  if (top.status !== 0) die('not inside a git repository', EXIT.usage)
+  const common = git(['rev-parse', '--path-format=absolute', '--git-common-dir'])
+  const branch = git(['rev-parse', '--abbrev-ref', 'HEAD']).out
+  return { worktree: top.out, commonDir: common.out, branch }
+}
+
+// Every worktree of one project shares this directory, and no other project
+// does. That is exactly the scope a landing queue needs, and it also keeps the
+// files outside the working tree, where no `git add -A` can sweep them up.
+function lockRoot(repo, target) {
+  const override = process.env.AGENT_MERGE_LOCK_DIR
+  const base = override || join(repo.commonDir, 'agent-merge-lock')
+  const dir = join(base, target.replace(/[^A-Za-z0-9._-]/g, '_'))
+  mkdirSync(join(dir, 'queue'), { recursive: true })
+  return dir
+}
+
+function worktreeList() {
+  const raw = git(['worktree', 'list', '--porcelain']).out
+  const trees = []
+  let current = null
+  for (const line of raw.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      current = { path: line.slice(9), branch: null, detached: false }
+      trees.push(current)
+    } else if (line.startsWith('branch ') && current) {
+      current.branch = line.slice(7).replace(/^refs\/heads\//, '')
+    } else if (line === 'detached' && current) {
+      current.detached = true
+    }
+  }
+  return trees
+}
+
+function checkoutOf(branch) {
+  return worktreeList().find((tree) => tree.branch === branch) || null
+}
+
+function dirtyFiles(cwd) {
+  return git(['status', '--porcelain'], { cwd })
+    .out.split('\n')
+    .filter(Boolean)
+    .map((line) => line.slice(3))
+}
+
+function midMerge(cwd) {
+  const dir = git(['rev-parse', '--path-format=absolute', '--git-dir'], { cwd }).out
+  for (const marker of ['MERGE_HEAD', 'REBASE_HEAD', 'CHERRY_PICK_HEAD']) {
+    try {
+      readFileSync(join(dir, marker))
+      return marker
+    } catch {
+      /* not in that state */
+    }
+  }
+  return null
+}
+
+function shaOf(ref) {
+  const result = git(['rev-parse', '--verify', `${ref}^{commit}`], { allowFail: true })
+  return result.status === 0 ? result.out : null
+}
+
+// ---------------------------------------------------------------- lock files
+
+function holderPath(dir) {
+  return join(dir, 'holder.json')
+}
+
+function readHolder(dir) {
+  try {
+    return JSON.parse(readFileSync(holderPath(dir), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+function writeHolder(dir, record) {
+  writeFileSync(holderPath(dir), JSON.stringify(record, null, 2) + '\n')
+}
+
+// 'wx' fails when the file already exists, so two agents racing for a free lock
+// cannot both win. No separate registry lock is needed, and none is portable:
+// this machine has no flock(1).
+function claimHolder(dir, record) {
+  let fd
+  try {
+    fd = openSync(holderPath(dir), 'wx')
+  } catch (error) {
+    if (error.code === 'EEXIST') return false
+    throw error
+  }
+  writeSync(fd, JSON.stringify(record, null, 2) + '\n')
+  closeSync(fd)
+  return true
+}
+
+function note(dir, line) {
+  appendFileSync(join(dir, 'history.log'), `${now()} ${line}\n`)
+}
+
+function ownerKey(owner) {
+  return owner.replace(/[^A-Za-z0-9._-]/g, '_').slice(-60)
+}
+
+function tickets(dir) {
+  let names = []
+  try {
+    names = readdirSync(join(dir, 'queue')).filter((name) => name.endsWith('.json'))
+  } catch {
+    return []
+  }
+  return names
+    .map((name) => {
+      try {
+        const record = JSON.parse(readFileSync(join(dir, 'queue', name), 'utf8'))
+        return { name, ...record }
+      } catch {
+        return null
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function myTicket(dir, owner) {
+  const key = ownerKey(owner)
+  return tickets(dir).find((ticket) => ticket.name.endsWith(`--${key}.json`)) || null
+}
+
+function dropTicket(dir, name) {
+  try {
+    unlinkSync(join(dir, 'queue', name))
+  } catch {
+    /* already gone */
+  }
+}
+
+// A ticket is a place in line, and it is written to disk precisely so that a
+// killed session does not lose it: the same worktree calling acquire again
+// finds its own ticket and keeps its position.
+function ensureTicket(dir, identity, ticketTtl) {
+  const existing = myTicket(dir, identity.owner)
+  if (existing) {
+    writeFileSync(
+      join(dir, 'queue', existing.name),
+      JSON.stringify({ ...existing, name: undefined, heartbeat: now() }, null, 2) + '\n',
+    )
+    return existing.name
+  }
+  const name = `${String(Date.now()).padStart(14, '0')}--${ownerKey(identity.owner)}.json`
+  writeFileSync(
+    join(dir, 'queue', name),
+    JSON.stringify({ ...identity, since: now(), heartbeat: now() }, null, 2) + '\n',
+  )
+  note(dir, `queued ${identity.owner} branch=${identity.branch}`)
+  void ticketTtl
+  return name
+}
+
+function reap(dir, ttl, ticketTtl) {
+  const holder = readHolder(dir)
+  if (holder) {
+    const idle = secondsSince(holder.heartbeat || holder.since)
+    const limit = Number(holder.ttl || ttl)
+    if (idle > limit) {
+      try {
+        unlinkSync(holderPath(dir))
+        note(dir, `broke lock of ${holder.owner} after ${idle}s of silence (ttl ${limit}s)`)
+        process.stderr.write(
+          `agent-merge-lock: took over from ${holder.owner}, silent for ${idle}s (ttl ${limit}s) — recorded in history.log\n`,
+        )
+      } catch {
+        /* raced with another reaper */
+      }
+    }
+  }
+  for (const ticket of tickets(dir)) {
+    if (secondsSince(ticket.heartbeat || ticket.since) > ticketTtl) {
+      dropTicket(dir, ticket.name)
+      note(dir, `dropped stale ticket of ${ticket.owner}`)
+    }
+  }
+}
+
+// ---------------------------------------------------------------- identity
+
+function identityFor(repo, options) {
+  const owner = options.owner || repo.worktree
+  return {
+    owner,
+    worktree: repo.worktree,
+    branch: options.branch || repo.branch,
+    host: hostname(),
+    pid: process.pid,
+    label: options.label || '',
+  }
+}
+
+function mine(holder, identity) {
+  return Boolean(holder) && holder.owner === identity.owner && holder.host === identity.host
+}
+
+function remaining(holder) {
+  const limit = Number(holder.ttl || TTL_DEFAULT)
+  return Math.max(0, limit - secondsSince(holder.heartbeat || holder.since))
+}
+
+function touch(dir, holder) {
+  writeHolder(dir, { ...holder, heartbeat: now() })
+}
+
+// ---------------------------------------------------------------- commands
+
+async function commandAcquire(repo, target, options, { quiet = false } = {}) {
+  const dir = lockRoot(repo, target)
+  const identity = identityFor(repo, options)
+  const ttl = Number(options.ttl ?? TTL_DEFAULT)
+  const ticketTtl = Number(options['ticket-ttl'] ?? TICKET_TTL_DEFAULT)
+  const waitFor = Number(options.wait ?? WAIT_DEFAULT)
+  if (!Number.isFinite(ttl) || ttl <= 0) die(`--ttl must be seconds, got: ${options.ttl}`)
+  if (!Number.isFinite(waitFor) || waitFor < 0) die(`--wait must be seconds (0 = forever), got: ${options.wait}`)
+
+  const deadline = waitFor === 0 ? Infinity : Date.now() + waitFor * 1000
+  let announced = false
+  let ticketName = null
+
+  for (;;) {
+    reap(dir, ttl, ticketTtl)
+    const holder = readHolder(dir)
+
+    if (mine(holder, identity)) {
+      // Also the answer after a session was killed and restarted: the lock is
+      // owned by this worktree, not by the process that took it.
+      touch(dir, holder)
+      dropTicketOf(dir, identity)
+      const held = secondsSince(holder.since)
+      if (!quiet) {
+        say(`lock still held by this worktree (taken ${held}s ago, target ${target})`)
+        say(`ACQUIRED target=${target} owner=${identity.owner} base=${shaOf(target) || 'none'} resumed=true`)
+      }
+      return { dir, identity, resumed: true }
+    }
+
+    // Join the queue before reading it, so this worktree competes on its own
+    // ticket and an empty queue cannot be mistaken for "my turn".
+    ticketName = ensureTicket(dir, identity, ticketTtl)
+
+    if (!holder && tickets(dir)[0]?.name === ticketName) {
+      const record = { ...identity, ttl, since: now(), heartbeat: now(), target }
+      if (claimHolder(dir, record)) {
+        dropTicket(dir, ticketName)
+        note(dir, `acquired by ${identity.owner} branch=${identity.branch}`)
+        if (!quiet) {
+          say(`lock taken for ${target}; release it as soon as the merge is in`)
+          say(`ACQUIRED target=${target} owner=${identity.owner} base=${shaOf(target) || 'none'} resumed=false`)
+        }
+        return { dir, identity, resumed: false }
+      }
+    }
+
+    if (Date.now() >= deadline) {
+      const position = queuePosition(dir, identity)
+      const owner = readHolder(dir)
+      say(`still waiting for ${target}; the queue place is saved on disk, call acquire again`)
+      say(
+        `WAITING target=${target} position=${position} holder=${owner ? owner.owner : 'none'} ` +
+          `held=${owner ? secondsSince(owner.since) : 0}s expires_in=${owner ? remaining(owner) : 0}s`,
+      )
+      process.exit(EXIT.waiting)
+    }
+
+    if (!announced && !quiet) {
+      const owner = readHolder(dir)
+      process.stderr.write(
+        `agent-merge-lock: waiting for ${target}; held by ${owner ? `${owner.owner} (${secondsSince(owner.since)}s)` : 'nobody yet'}, ` +
+          `position ${queuePosition(dir, identity)}\n`,
+      )
+      announced = true
+    }
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS))
+  }
+}
+
+function queuePosition(dir, identity) {
+  const queue = tickets(dir)
+  const index = queue.findIndex((ticket) => ticket.name.endsWith(`--${ownerKey(identity.owner)}.json`))
+  return index === -1 ? 0 : index + 1
+}
+
+function commandStatus(repo, target, options) {
+  const dir = lockRoot(repo, target)
+  const identity = identityFor(repo, options)
+  reap(dir, Number(options.ttl ?? TTL_DEFAULT), Number(options['ticket-ttl'] ?? TICKET_TTL_DEFAULT))
+  const holder = readHolder(dir)
+  const queue = tickets(dir)
+  const checkout = checkoutOf(target)
+  const state = mine(holder, identity)
+    ? 'HELD_BY_ME'
+    : holder
+      ? 'HELD_BY_OTHER'
+      : myTicket(dir, identity.owner)
+        ? 'QUEUED'
+        : 'FREE'
+
+  const report = {
+    state,
+    target,
+    targetSha: shaOf(target),
+    owner: identity.owner,
+    branch: identity.branch,
+    holder: holder || null,
+    heldSeconds: holder ? secondsSince(holder.since) : 0,
+    expiresInSeconds: holder ? remaining(holder) : 0,
+    position: queuePosition(dir, identity),
+    queue: queue.map((ticket) => ({ owner: ticket.owner, branch: ticket.branch, since: ticket.since })),
+    targetCheckout: checkout ? checkout.path : null,
+    targetCheckoutForeign: checkout ? checkout.path !== repo.worktree : false,
+    targetCheckoutDirty: checkout ? dirtyFiles(checkout.path).length : 0,
+    targetMidMerge: checkout ? midMerge(checkout.path) : null,
+    lockDir: dir,
+  }
+
+  if (options.json !== undefined) {
+    say(JSON.stringify(report, null, 2))
+    return
+  }
+
+  if (state === 'HELD_BY_ME') {
+    touch(dir, holder)
+    say(`This worktree holds ${target}: taken ${report.heldSeconds}s ago, expires in ${remaining(holder)}s unless renewed.`)
+    say('Finish the merge and run release, or run release now if the work is not ready.')
+  } else if (state === 'HELD_BY_OTHER') {
+    say(`${target} is held by ${holder.owner} (branch ${holder.branch}, ${report.heldSeconds}s, expires in ${remaining(holder)}s).`)
+    say(report.position ? `This worktree is number ${report.position} in the queue.` : 'This worktree is not in the queue; run acquire to join it.')
+  } else if (state === 'QUEUED') {
+    say(`${target} is free and this worktree is number ${report.position} in the queue; run acquire to take it.`)
+  } else {
+    say(`${target} is free and this worktree is not waiting for it.`)
+  }
+  if (report.targetMidMerge) {
+    say(`Warning: the checkout at ${report.targetCheckout} is in the middle of ${report.targetMidMerge}.`)
+  }
+  if (report.targetCheckoutForeign && report.targetCheckoutDirty) {
+    say(`Note: ${target} is checked out at ${report.targetCheckout} with ${report.targetCheckoutDirty} uncommitted file(s) that belong to another session.`)
+  }
+  say(`${state} target=${target} owner=${identity.owner} position=${report.position} base=${report.targetSha || 'none'}`)
+}
+
+function commandRenew(repo, target, options) {
+  const dir = lockRoot(repo, target)
+  const identity = identityFor(repo, options)
+  const holder = readHolder(dir)
+  if (!mine(holder, identity)) {
+    say(`NOT_OWNER target=${target} owner=${identity.owner} holder=${holder ? holder.owner : 'none'}`)
+    process.exit(EXIT.notOwner)
+  }
+  const ttl = Number(options.ttl ?? holder.ttl ?? TTL_DEFAULT)
+  writeHolder(dir, { ...holder, ttl, heartbeat: now() })
+  say(`RENEWED target=${target} owner=${identity.owner} expires_in=${ttl}s`)
+}
+
+function commandRelease(repo, target, options) {
+  const dir = lockRoot(repo, target)
+  const identity = identityFor(repo, options)
+  const holder = readHolder(dir)
+  if (!holder) {
+    dropTicketOf(dir, identity)
+    say(`RELEASED target=${target} owner=${identity.owner} held=false`)
+    return
+  }
+  if (!mine(holder, identity) && options.force === undefined) {
+    say(`NOT_OWNER target=${target} owner=${identity.owner} holder=${holder.owner}`)
+    process.exit(EXIT.notOwner)
+  }
+  unlinkSync(holderPath(dir))
+  dropTicketOf(dir, identity)
+  note(dir, `released by ${identity.owner}${options.force !== undefined && !mine(holder, identity) ? ' (forced)' : ''}`)
+  say(`RELEASED target=${target} owner=${identity.owner} held=true`)
+}
+
+function dropTicketOf(dir, identity) {
+  const ticket = myTicket(dir, identity.owner)
+  if (ticket) dropTicket(dir, ticket.name)
+}
+
+function commandBreak(repo, target, options) {
+  const dir = lockRoot(repo, target)
+  const holder = readHolder(dir)
+  if (!holder) {
+    say(`FREE target=${target}`)
+    return
+  }
+  if (!options.reason) die('break needs --reason TEXT, because it takes a lock somebody else may still be using')
+  unlinkSync(holderPath(dir))
+  note(dir, `forcibly broken: was ${holder.owner}, reason: ${options.reason}`)
+  say(`BROKEN target=${target} was=${holder.owner} held=${secondsSince(holder.since)}s`)
+}
+
+function commandQueue(repo, target, options) {
+  const dir = lockRoot(repo, target)
+  const holder = readHolder(dir)
+  const queue = tickets(dir)
+  if (options.json !== undefined) {
+    say(JSON.stringify({ target, lockDir: dir, holder, queue }, null, 2))
+    return
+  }
+  say(`lock directory: ${dir}`)
+  say(
+    holder
+      ? `holder: ${holder.owner} branch=${holder.branch} held=${secondsSince(holder.since)}s expires_in=${remaining(holder)}s`
+      : 'holder: nobody',
+  )
+  if (queue.length === 0) {
+    say('queue: empty')
+  } else {
+    queue.forEach((ticket, index) => {
+      say(`  ${index + 1}. ${ticket.owner} branch=${ticket.branch} waiting=${secondsSince(ticket.since)}s`)
+    })
+  }
+}
+
+// The whole point of the short-lock strategy: everything slow — merging the
+// integration branch into the feature branch and running the full suite — has
+// already happened in the caller's own worktree, outside the lock. What is left
+// is a few seconds of ref movement, so a session dying while holding the lock
+// is unlikely rather than routine.
+async function commandLand(repo, target, options) {
+  const branch = options.branch || repo.branch
+  if (branch === target) die(`--branch and --into are both ${target}; nothing to land`)
+  if (!shaOf(branch)) die(`no such branch: ${branch}`)
+  if (!shaOf(target)) die(`no such branch: ${target}`)
+
+  const ownDirty = dirtyFiles(repo.worktree)
+  if (ownDirty.length && options['allow-dirty'] === undefined) {
+    say(`This worktree has ${ownDirty.length} uncommitted file(s); commit them first or they will not be part of what lands.`)
+    say(`BLOCKED reason=dirty-source files=${ownDirty.length}`)
+    process.exit(EXIT.blocked)
+  }
+
+  const { dir, identity } = await commandAcquire(repo, target, { ...options, branch }, { quiet: true })
+  const holder = readHolder(dir)
+  const targetSha = shaOf(target)
+
+  if (options.base && options.base !== targetSha) {
+    const moved = git(['log', '--oneline', `${options.base}..${target}`], { allowFail: true }).out
+    const theirFiles = git(['diff', '--name-only', options.base, target], { allowFail: true }).out.split('\n').filter(Boolean)
+    const myFiles = git(['diff', '--name-only', `${options.base}...${branch}`], { allowFail: true }).out.split('\n').filter(Boolean)
+    const overlap = theirFiles.filter((file) => myFiles.includes(file))
+    bail(
+      dir,
+      identity,
+      options,
+      [
+        `${target} moved since you prepared: ${moved.split('\n').filter(Boolean).length} new commit(s).`,
+        overlap.length ? `Overlapping files: ${overlap.join(', ')}` : 'None of those commits touch your files.',
+        `Merge the new tip into ${branch} in your own worktree, re-run your checks, then land again.`,
+      ],
+      `STALE target=${target} base=${options.base} now=${targetSha} overlap=${overlap.length}`,
+      EXIT.conflict,
+    )
+  }
+
+  // The short lock only works when the slow half already happened: the tip of
+  // the integration branch has to be an ancestor of this branch, meaning it was
+  // merged in and tested here, outside the lock. If it is not, the merge is
+  // being invented under the lock and what was tested is not what lands.
+  const prepared = git(['merge-base', '--is-ancestor', target, branch], { allowFail: true }).status === 0
+  if (!prepared && options['allow-unprepared'] === undefined) {
+    bail(
+      dir,
+      identity,
+      options,
+      [
+        `${target} is not merged into ${branch} yet, so this branch was never tested against what ${target} currently holds.`,
+        `In your own worktree: git merge ${target}, resolve anything that conflicts, re-run your checks, then land.`,
+      ],
+      `NOT_PREPARED target=${target} branch=${branch}`,
+      EXIT.conflict,
+    )
+  }
+
+  const checkout = checkoutOf(target)
+  let workdir = checkout ? checkout.path : null
+  let temporary = null
+
+  if (checkout) {
+    const state = midMerge(checkout.path)
+    if (state) {
+      bail(
+        dir,
+        identity,
+        options,
+        [`The checkout at ${checkout.path} is in the middle of ${state}; landing there now would join somebody else's half-finished operation.`],
+        `BLOCKED reason=target-mid-merge checkout=${checkout.path} state=${state}`,
+        EXIT.blocked,
+      )
+    }
+  } else {
+    // Nobody has the integration branch checked out, so give it a private one.
+    temporary = join(dir, 'integration')
+    rmSync(temporary, { recursive: true, force: true })
+    git(['worktree', 'prune'])
+    git(['worktree', 'add', temporary, target])
+    workdir = temporary
+  }
+
+  const foreign = Boolean(checkout) && checkout.path !== repo.worktree
+  const foreignDirtyBefore = foreign ? dirtyFiles(workdir) : []
+
+  if (options.verify) {
+    // Run the check here, in the caller's own worktree, and not after the merge
+    // in the target checkout: with the base unmoved, the merge result has the
+    // same tree as this branch, and the target checkout may hold another
+    // session's uncommitted work, which would be what the check actually tested.
+    say(`Verifying in ${repo.worktree}: ${options.verify}`)
+    const check = spawnSync(options.verify, { cwd: repo.worktree, shell: true, stdio: 'inherit' })
+    if (check.status !== 0) {
+      bail(
+        dir,
+        identity,
+        options,
+        [`The check failed, so nothing was merged and ${target} is untouched.`],
+        `VERIFY_FAILED target=${target} branch=${branch} exit=${check.status}`,
+        EXIT.conflict,
+      )
+    }
+  }
+
+  const preSha = shaOf(target)
+  const message = options.message || `Merge ${branch} into ${target}`
+  const merge = git(['merge', '--no-ff', '--no-edit', '-m', message, branch], { cwd: workdir, allowFail: true })
+
+  if (merge.status !== 0) {
+    const conflicted = git(['diff', '--name-only', '--diff-filter=U'], { cwd: workdir, allowFail: true }).out
+    const overwritten = /would be overwritten by merge|local changes/i.test(merge.err)
+    if (midMerge(workdir)) git(['merge', '--abort'], { cwd: workdir, allowFail: true })
+    if (temporary) removeTemporary(temporary)
+
+    if (overwritten) {
+      // git refused because the target checkout has uncommitted changes in the
+      // very files this merge touches. Nothing was modified: that refusal is
+      // the protection, not a failure of this tool.
+      bail(
+        dir,
+        identity,
+        options,
+        [
+          `Another session's uncommitted work in ${workdir} is in the way; git refused and changed nothing.`,
+          merge.err,
+          'Ask whoever owns that checkout to commit or stash those files, then land again.',
+        ],
+        `BLOCKED reason=foreign-uncommitted checkout=${workdir}`,
+        EXIT.blocked,
+      )
+    }
+    bail(
+      dir,
+      identity,
+      options,
+      [
+        `The merge conflicts. Resolve it on ${branch} in your own worktree (merge ${target} into ${branch}), re-run your checks, then land again.`,
+        conflicted ? `Conflicting files: ${conflicted.split('\n').join(', ')}` : merge.err,
+      ],
+      `CONFLICT target=${target} branch=${branch}`,
+      EXIT.conflict,
+    )
+  }
+
+  const newSha = shaOf(target)
+  const sameTree = git(['rev-parse', `${target}^{tree}`]).out === git(['rev-parse', `${branch}^{tree}`]).out
+
+  if (temporary) removeTemporary(temporary)
+  note(dir, `landed ${branch} on ${target}: ${preSha} -> ${newSha} by ${identity.owner}`)
+
+  if (options['keep-lock'] === undefined) {
+    try {
+      unlinkSync(holderPath(dir))
+    } catch {
+      /* already gone */
+    }
+    dropTicketOf(dir, identity)
+    note(dir, `released by ${identity.owner} after landing`)
+  }
+
+  say(`${branch} is now part of ${target}: ${preSha.slice(0, 8)} -> ${newSha.slice(0, 8)}.`)
+  if (foreign) {
+    say(
+      `The merge was made in ${workdir}, which belongs to another session` +
+        (foreignDirtyBefore.length ? ` and still holds its own ${foreignDirtyBefore.length} uncommitted file(s), untouched.` : '.'),
+    )
+  }
+  if (sameTree === false) {
+    say(`Note: the merged tree differs from ${branch}, so what you tested is not exactly what ${target} now holds.`)
+  }
+  say(
+    `LANDED target=${target} branch=${branch} from=${preSha} to=${newSha} ` +
+      `lock=${options['keep-lock'] === undefined ? 'released' : 'held'} same_tree=${sameTree}`,
+  )
+  void holder
+}
+
+// Every unsuccessful landing gives the lock back by default. Whatever is wrong
+// — a moved tip, a conflict, a failed check, somebody else's uncommitted work —
+// is fixed outside the lock, and a queue that waits for that fix is the failure
+// this tool exists to prevent. --keep-lock opts out for a fix known to be quick.
+function bail(dir, identity, options, lines, machine, code) {
+  const keep = options['keep-lock'] !== undefined
+  if (!keep) {
+    try {
+      unlinkSync(holderPath(dir))
+    } catch {
+      /* already gone */
+    }
+    dropTicketOf(dir, identity)
+    note(dir, `released by ${identity.owner} without landing: ${machine.split(' ')[0]}`)
+  }
+  for (const line of lines) say(line)
+  say(keep ? 'The lock is still yours, as you asked with --keep-lock.' : 'The lock was released, so the queue keeps moving; land again when it is fixed.')
+  say(`${machine} lock=${keep ? 'held' : 'released'}`)
+  process.exit(code)
+}
+
+function removeTemporary(path) {
+  git(['worktree', 'remove', '--force', path], { allowFail: true })
+  rmSync(path, { recursive: true, force: true })
+  git(['worktree', 'prune'], { allowFail: true })
+}
+
+// ---------------------------------------------------------------- cli
+
+const USAGE = `agent-merge-lock — take turns landing work on a project's integration branch
+
+  agent-merge-lock acquire [--into master] [--wait 540] [--ttl 3600] [--label TEXT]
+      Wait for the lock and take it. Ownership belongs to this worktree, not to
+      this process, so calling acquire again after a killed session returns the
+      same lock with resumed=true. When the wait window runs out it exits 75 and
+      keeps the queue place on disk: call it again, or run it in the background
+      with --wait 0 to wait indefinitely.
+
+  agent-merge-lock status [--json]
+      What this worktree's relation to the lock is right now: HELD_BY_ME,
+      HELD_BY_OTHER, QUEUED or FREE. This is the first command to run after any
+      interruption, before touching git at all.
+
+  agent-merge-lock land --branch NAME [--into master] [--base SHA] [--verify CMD]
+      Take the lock, refuse if the integration branch moved past --base, merge
+      --no-ff, and release. Add --keep-lock to keep it, --message to set the
+      merge subject.
+
+  agent-merge-lock renew [--ttl SECONDS]     Push the expiry back during a long hold.
+  agent-merge-lock release [--force]         Give the lock up. Always do this.
+  agent-merge-lock queue [--json]            Who holds it and who is waiting.
+  agent-merge-lock break --reason TEXT       Take a lock away from its owner on purpose.
+
+Exit codes: 0 done, 75 still waiting (retry), 65 stale base / conflict / failed
+check, 66 blocked by somebody's uncommitted work, 69 not the owner.
+
+The lock lives in the project's own shared git directory, so projects never
+queue behind each other. Override with AGENT_MERGE_LOCK_DIR.`
+
+function parseFlags(argv) {
+  const options = {}
+  for (let i = 0; i < argv.length; i += 1) {
+    const flag = argv[i]
+    if (!flag.startsWith('--')) die(`unexpected argument: ${flag}`)
+    const [name, inline] = flag.slice(2).split('=')
+    const next = argv[i + 1]
+    if (inline !== undefined) {
+      options[name] = inline
+    } else if (next === undefined || next.startsWith('--')) {
+      options[name] = ''
+    } else {
+      options[name] = next
+      i += 1
+    }
+  }
+  return options
+}
+
+async function main() {
+  const argv = process.argv.slice(2)
+  const verb = argv[0]
+  if (!verb || verb === '--help' || verb === '-h' || verb === 'help') {
+    say(USAGE)
+    process.exit(verb ? EXIT.ok : EXIT.usage)
+  }
+
+  const options = parseFlags(argv.slice(1))
+  const repo = repoContext()
+  const target = options.into || process.env.AGENT_MERGE_LOCK_TARGET || defaultTarget()
+
+  switch (verb) {
+    case 'acquire':
+      await commandAcquire(repo, target, options)
+      return
+    case 'status':
+      commandStatus(repo, target, options)
+      return
+    case 'renew':
+      commandRenew(repo, target, options)
+      return
+    case 'release':
+      commandRelease(repo, target, options)
+      return
+    case 'land':
+      await commandLand(repo, target, options)
+      return
+    case 'queue':
+      commandQueue(repo, target, options)
+      return
+    case 'break':
+      commandBreak(repo, target, options)
+      return
+    default:
+      die(`unknown command: ${verb}`)
+  }
+}
+
+function defaultTarget() {
+  for (const candidate of ['master', 'main']) {
+    if (shaOf(candidate)) return candidate
+  }
+  die('cannot tell which branch to land on; pass --into NAME')
+}
+
+main().catch((error) => die(error.stack || String(error), EXIT.internal))
