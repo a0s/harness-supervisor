@@ -15,7 +15,8 @@ settings.
 - context rotation and cross-runtime recovery;
 - isolated worktrees, English commits, evidence-bearing commit bodies;
 - leases for the host-global resources a worktree cannot isolate;
-- a queue for the integration branch, so every agent's work actually lands.
+- a queue for the integration branch, so every agent's work actually lands;
+- one directory where the owner sees what every agent is doing.
 
 Each consumer repository still defines its own product boundaries, trace file,
 test layers, branch names, merge-request policy, and any stricter safety rules.
@@ -139,3 +140,44 @@ What makes it survive an agent's real life:
 Lock files live inside the project's own shared git directory, so two projects on
 one machine never queue behind each other and no `git add -A` can sweep them up.
 `reference/landing.md` has the sequence, the state words, and the resume table.
+
+## Watching every agent from one directory
+
+![The main checkout's state directory holds its own topics plus one symlink per
+worktree topic, each named topic-at-worktree and pointing at the real directory
+inside the worktree that owns it, next to the one-screen summary agent-state list
+prints](docs/state-visibility.svg)
+
+Run state belongs beside the work it describes, so an agent in its own worktree
+writes `.agents/state/<topic>/` inside that worktree. That is right for recovery
+and useless for the person supervising: with five agents running, the owner has
+to walk five directories to learn what is in flight and how much is left.
+
+`harness/bin/agent-state`, installed as `.agents/bin/agent-state`, publishes each
+worktree's topics into the main checkout as symlinks the moment they exist:
+
+```sh
+agent-state link          # inside a worktree, after creating .agents/state/<topic>/
+agent-state list          # every topic in the project, in one screen
+agent-state unlink        # when the topic closes or the worktree is torn down
+agent-state prune         # drop links whose worktree is gone
+```
+
+- Nothing is copied. A link named `<topic>@<worktree>` points at the real
+  directory, so opening it from the main checkout puts the owner inside the
+  agent's own files, always current, with no second version to drift.
+- Nothing leaks into history. Real topics never contain `@`, so one rule in the
+  repository's local `info/exclude` covers every link and no `git add -A` can
+  stage one.
+- Nothing hides. `list` reads every worktree, not just the published ones, so a
+  topic an interrupted agent never linked still shows up, marked as not linked.
+  Each row carries work-package counts, whatever is blocked, an in-flight
+  landing, and how long ago it moved.
+- Inherited copies stay quiet. A worktree branched from the integration branch
+  carries every committed topic, and `link` and `list` skip the ones this
+  worktree has not touched, so only real work shows.
+
+The links are part of the process rather than an afterthought: the skill
+publishes state when a worktree topic is created, `agent-state list` opens the
+resume sweep, and unlinking belongs to tearing a worktree down, because a link
+into a deleted worktree is the same misinformation as a stale plan.

@@ -24,13 +24,14 @@ skill_source=$harness_dir/.agents/skills/supervisor
 claude_source=$harness_dir/.claude/agents
 lease_source=$harness_dir/bin/agent-lease
 merge_lock_source=$harness_dir/bin/agent-merge-lock
+state_source=$harness_dir/bin/agent-state
 
 [ -f "$skill_source/SKILL.md" ] || {
   printf 'Harness skill is missing: %s\n' "$skill_source/SKILL.md" >&2
   exit 66
 }
 
-for tool_path in "$lease_source" "$merge_lock_source"; do
+for tool_path in "$lease_source" "$merge_lock_source" "$state_source"; do
   [ -x "$tool_path" ] || {
     printf 'Harness tool is missing or not executable: %s\n' "$tool_path" >&2
     exit 66
@@ -82,6 +83,7 @@ check_target "$skill_source" "$target_repo/.agents/skills/supervisor"
 check_target "$skill_source" "$target_repo/.claude/skills/supervisor"
 check_target "$lease_source" "$target_repo/.agents/bin/agent-lease"
 check_target "$merge_lock_source" "$target_repo/.agents/bin/agent-merge-lock"
+check_target "$state_source" "$target_repo/.agents/bin/agent-state"
 for source_path in "$claude_source"/supervisor-*.md; do
   check_target "$source_path" "$target_repo/.claude/agents/$(basename "$source_path")"
 done
@@ -90,6 +92,7 @@ ensure_link "$skill_source" "$target_repo/.agents/skills/supervisor"
 ensure_link "$skill_source" "$target_repo/.claude/skills/supervisor"
 ensure_link "$lease_source" "$target_repo/.agents/bin/agent-lease"
 ensure_link "$merge_lock_source" "$target_repo/.agents/bin/agent-merge-lock"
+ensure_link "$state_source" "$target_repo/.agents/bin/agent-state"
 for source_path in "$claude_source"/supervisor-*.md; do
   ensure_link "$source_path" "$target_repo/.claude/agents/$(basename "$source_path")"
 done

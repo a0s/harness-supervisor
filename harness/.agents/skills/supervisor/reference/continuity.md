@@ -18,20 +18,33 @@ operations are runtime-specific.
    place in line survived; `HELD_BY_OTHER` means another agent is landing right
    now and this one must not touch the branch. `reference/landing.md` holds the
    full table.
-2. Find unfinished work without preloading every topic:
+2. Take in the whole project at once, including topics living in other
+   worktrees:
+
+   ```sh
+   .agents/bin/agent-state list
+   ```
+
+   Worktree topics appear here because each worktree publishes its state into
+   the main checkout as a `<topic>@<worktree>` link. A topic marked *not linked*
+   is one an interrupted agent never published: link it before relying on the
+   grep below. A *gone* row is a link into a deleted worktree, which
+   `agent-state prune` clears.
+3. Find unfinished work without preloading every topic:
 
    ```sh
    grep -l 'status: *\(in-progress\|needs-restart\)' .agents/state/*/wp-*.md
    ```
 
-   Read only matches, their topic ledger, and persisted supervisor briefs. A
-   missing/empty state directory means there is nothing to restore.
-3. Detect the current runtime and inspect liveness with only that runtime's
+   The links make this one grep cover every worktree. Read only matches, their
+   topic ledger, and persisted supervisor briefs. A missing/empty state
+   directory means there is nothing to restore.
+4. Detect the current runtime and inspect liveness with only that runtime's
    controls.
-4. For every ledger row owning unfinished WPs, either contact the live owner or
+5. For every ledger row owning unfinished WPs, either contact the live owner or
    checkpoint the tree and start a fresh owner from files. Restore every topic
    the sweep finds, rather than stopping at the first grep match.
-5. Tell the user which topics and WPs were restored before continuing work, and
+6. Tell the user which topics and WPs were restored before continuing work, and
    name any landing that was still in flight.
 
 ### Liveness by runtime

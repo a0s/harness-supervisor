@@ -53,7 +53,8 @@ evidence, not unconditional reasons to add agents; the gates below decide.
   that lock, and release it as soon as the merge is in. Reviewed work that never
   reaches the integration branch is not done.
 - A claim, green build, or agent summary is not verification.
-- Nothing needed for recovery may exist only in a conversation context.
+- Nothing needed for recovery may exist only in a conversation context, and
+  nothing in flight may be visible only inside the worktree that owns it.
 - Out-of-scope findings are reported, not silently fixed.
 
 ## Choose the lane before planning
@@ -132,6 +133,13 @@ recoverable may use the harness checklist without delegation state.
 The plan holds intent; WP files hold mutable truth. Update a WP after a material
 state transition and before handing it to another agent. Do not journal scout
 chatter that changes neither `last-good` nor `next-action`.
+
+State written inside a worktree is published to the main checkout the moment the
+topic directory exists, with `.agents/bin/agent-state link` from that worktree,
+and unpublished with `agent-state unlink` when the topic closes or the worktree
+is torn down. The owner watches one directory rather than walking every worktree;
+`agent-state list` prints every topic in the project with its work-package counts
+and anything blocked.
 
 ## Phase 4: brief narrowly
 
@@ -230,7 +238,10 @@ Require a compact supervisor report:
 
 Root reads the diff and real output before relaying what shipped, what is
 verified, and what is blocked. Update project plan/log/decision records, then
-delete finished `.agents/state/<topic>/`; stale recovery state is misinformation.
+delete finished `.agents/state/<topic>/` and remove its published link
+(`agent-state unlink`, or `agent-state prune` after a worktree is gone); stale
+recovery state is misinformation, and so is a link into a tree that no longer
+exists.
 
 Before switching topics, persist or close the current one explicitly.
 
@@ -239,8 +250,9 @@ Before switching topics, persist or close the current one explicitly.
 Before any edit, inspect status and preserve inherited changes. Isolated work
 uses a separate worktree when the repository and runtime support it: branch from
 the current local integration branch rather than a potentially stale remote,
-commit the reviewed result there, merge it into the local integration branch
-when done, then remove the worktree. Follow repository instructions when they
+publish its state with `agent-state link`, commit the reviewed result there,
+merge it into the local integration branch when done, then `agent-state unlink`
+and remove the worktree. Follow repository instructions when they
 define a different branch or worktree command.
 
 The last step is where parallel agents collide, so it is queued rather than

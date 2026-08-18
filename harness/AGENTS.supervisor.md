@@ -12,6 +12,10 @@ when the skill routes to them.
 - Keep concrete run state local to this repository under
   `.agents/state/<topic>/`. The shared harness defines its schema but never
   shares state files between repositories.
+- State written inside a worktree is published to the main checkout with
+  `.agents/bin/agent-state link` as soon as the topic exists, and unpublished
+  with `agent-state unlink` when it closes, so the owner sees every agent's
+  progress in one directory. `agent-state list` prints the whole picture.
 - A worktree isolates files, not the machine. Lease every host-global resource a
   command touches (ports, an external application, heavy runner slots) through
   `.agents/bin/agent-lease`, and never hardcode or hand-pick a port. Wire the

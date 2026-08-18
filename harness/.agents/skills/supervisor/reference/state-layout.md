@@ -28,6 +28,30 @@ already defines a project trace.
 Use one writer per WP file and never let agents sharing a file edit in parallel.
 The plan says what should happen; the WP file says what has happened.
 
+## State in a worktree stays visible from the main checkout
+
+A topic worked in a worktree keeps its state inside that worktree, next to the
+work it describes. That is right for recovery and invisible to the owner, who
+would otherwise have to walk every worktree to learn what is in flight. So the
+worktree publishes it, immediately after creating the topic directory:
+
+```sh
+.agents/bin/agent-state link          # from inside the worktree
+.agents/bin/agent-state list          # every topic in the project, one screen
+```
+
+`link` puts a symlink named `<topic>@<worktree>` in the main checkout's own
+`.agents/state/`, pointing at the real directory. The owner browses one place
+and still opens the true files; nothing is copied, so there is no second version
+to drift. Links are named with `@`, which no real topic uses, and the tool adds
+one rule to the repository's local `info/exclude`, so `git add -A` can never
+stage one.
+
+Remove the link when the topic closes or the worktree is torn down: run
+`agent-state unlink` in that worktree, or `agent-state prune` from anywhere to
+drop links whose target is gone. A link pointing at a deleted worktree is the
+same misinformation as a stale WP file.
+
 ## WP status
 
 Rewrite the whole `wp-N.md` after each material transition and before handoff:

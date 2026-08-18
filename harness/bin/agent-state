@@ -1,0 +1,431 @@
+#!/usr/bin/env node
+// agent-state: one place to see every agent's run state, wherever it lives.
+//
+// Run state belongs next to the work it describes, so an agent working in its
+// own worktree writes .agents/state/<topic>/ inside that worktree. That is right
+// for recovery and wrong for the person watching: the owner of a machine running
+// five agents would have to walk five directories to learn what is in flight and
+// how much is left.
+//
+// This tool keeps the state where it belongs and makes it visible from one
+// place. Each worktree topic gets a symlink in the main checkout's own
+// .agents/state/, named <topic>@<worktree>, so the owner browses one directory
+// and reaches every agent's real files. `list` answers the same question in one
+// screen without browsing at all.
+//
+//   agent-state link [--topic NAME]     from inside a worktree
+//   agent-state list [--json]           the whole zoo, linked or not
+//   agent-state unlink [--topic NAME]   before tearing a worktree down
+//   agent-state prune                   drop links whose target is gone
+//
+// The links are scratch, never history: one rule in the repository's local
+// info/exclude keeps `git add -A` from ever staging them.
+
+import { readdirSync, readFileSync, writeFileSync, lstatSync, statSync, symlinkSync, unlinkSync, mkdirSync, realpathSync, appendFileSync, existsSync } from 'node:fs'
+import { join, basename, dirname } from 'node:path'
+import { spawnSync } from 'node:child_process'
+
+const LINK_MARK = '@' // <topic>@<worktree>: one glob covers every link, and no real topic uses it
+const EXCLUDE_RULE = '/.agents/state/*@*'
+const EXCLUDE_NOTE = "# agent-state: links to another worktree's run state, never commit these"
+
+const EXIT = { ok: 0, usage: 64, missing: 66, refused: 73, internal: 70 }
+
+function die(message, code = EXIT.usage) {
+  process.stderr.write(`agent-state: ${message}\n`)
+  process.exit(code)
+}
+
+function say(line) {
+  process.stdout.write(line + '\n')
+}
+
+function git(args, options = {}) {
+  const result = spawnSync('git', args, { cwd: options.cwd || process.cwd(), encoding: 'utf8' })
+  if (result.error) die(`cannot run git: ${result.error.message}`, EXIT.internal)
+  if (result.status !== 0 && !options.allowFail) {
+    die(`git ${args.join(' ')} failed: ${(result.stderr || '').trim()}`, EXIT.internal)
+  }
+  return (result.stdout || '').trim()
+}
+
+function context() {
+  const worktree = git(['rev-parse', '--show-toplevel'], { allowFail: true })
+  if (!worktree) die('not inside a git repository')
+  const commonDir = git(['rev-parse', '--path-format=absolute', '--git-common-dir'])
+  // For every worktree of a project this points at the main checkout's .git,
+  // so its parent is the one directory the owner already watches.
+  const main = basename(commonDir) === '.git' ? dirname(commonDir) : null
+  if (!main) die(`cannot locate the main checkout from ${commonDir}; a bare repository has no state directory to link into`, EXIT.missing)
+  return { worktree, commonDir, main, isMain: realish(worktree) === realish(main) }
+}
+
+function realish(path) {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
+function stateDir(root) {
+  return join(root, '.agents', 'state')
+}
+
+function topicsIn(root) {
+  let names = []
+  try {
+    names = readdirSync(stateDir(root), { withFileTypes: true })
+      .filter((entry) => (entry.isDirectory() || entry.isSymbolicLink()) && !entry.name.startsWith('.'))
+      .map((entry) => entry.name)
+  } catch {
+    return []
+  }
+  return names.sort()
+}
+
+function isLink(path) {
+  try {
+    return lstatSync(path).isSymbolicLink()
+  } catch {
+    return false
+  }
+}
+
+function linkTarget(path) {
+  try {
+    return realpathSync(path)
+  } catch {
+    return null
+  }
+}
+
+// One local ignore rule, written once. It lives in the repository's own
+// info/exclude rather than .gitignore because these links are this machine's
+// scratch, not a fact about the project.
+function ensureExcluded(commonDir) {
+  const file = join(commonDir, 'info', 'exclude')
+  let current = ''
+  try {
+    current = readFileSync(file, 'utf8')
+  } catch {
+    mkdirSync(join(commonDir, 'info'), { recursive: true })
+  }
+  if (current.split('\n').some((line) => line.trim() === EXCLUDE_RULE)) return false
+  appendFileSync(file, `${current.endsWith('\n') || current === '' ? '' : '\n'}${EXCLUDE_NOTE}\n${EXCLUDE_RULE}\n`)
+  return true
+}
+
+function ageOf(iso) {
+  const parsed = Date.parse(iso)
+  if (Number.isNaN(parsed)) return null
+  const seconds = Math.max(0, Math.round((Date.now() - parsed) / 1000))
+  if (seconds < 90) return `${seconds}s`
+  if (seconds < 5400) return `${Math.round(seconds / 60)}m`
+  if (seconds < 172800) return `${Math.round(seconds / 3600)}h`
+  return `${Math.round(seconds / 86400)}d`
+}
+
+function fieldOf(text, name) {
+  const match = new RegExp(`^${name}:\\s*(.+)$`, 'mi').exec(text)
+  return match ? match[1].trim() : null
+}
+
+// What the owner actually wants to know: how much is left, and is anything stuck.
+function readTopic(path) {
+  let entries = []
+  try {
+    entries = readdirSync(path)
+  } catch {
+    return null
+  }
+  const counts = { done: 0, 'in-progress': 0, blocked: 0, 'needs-restart': 0, unknown: 0 }
+  let newest = null
+  let landing = null
+  for (const name of entries.filter((entry) => /^wp-.*\.md$/i.test(entry))) {
+    let text = ''
+    try {
+      text = readFileSync(join(path, name), 'utf8')
+    } catch {
+      continue
+    }
+    const status = (fieldOf(text, 'status') || '').split(/[\s|]+/).find((word) => word in counts)
+    counts[status || 'unknown'] += 1
+    const updated = fieldOf(text, 'updated')
+    if (updated && (!newest || Date.parse(updated) > Date.parse(newest))) newest = updated
+    const land = fieldOf(text, 'landing')
+    if (land && /lock-held|prepared/.test(land)) landing = land
+  }
+  const total = Object.values(counts).reduce((sum, value) => sum + value, 0)
+  if (!newest) {
+    for (const name of entries) {
+      try {
+        const mtime = statSync(join(path, name)).mtime.toISOString()
+        if (!newest || Date.parse(mtime) > Date.parse(newest)) newest = mtime
+      } catch {
+        /* skip */
+      }
+    }
+  }
+  return { path, total, counts, updated: newest, landing, hasPlan: entries.includes('TODO.md') }
+}
+
+function worktrees() {
+  const raw = git(['worktree', 'list', '--porcelain'])
+  const trees = []
+  let current = null
+  for (const line of raw.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      current = { path: line.slice(9), branch: null }
+      trees.push(current)
+    } else if (line.startsWith('branch ') && current) {
+      current.branch = line.slice(7).replace(/^refs\/heads\//, '')
+    }
+  }
+  return trees
+}
+
+// ---------------------------------------------------------------- commands
+
+// A worktree branched from the integration branch inherits every committed
+// topic, and linking those would bury the two or three topics actually being
+// worked on. A topic counts as this worktree's own when the main checkout does
+// not have it, or when this worktree has moved it: uncommitted edits, or a
+// different committed version.
+function ownTopic(ctx, source, topic) {
+  if (!existsSync(join(stateDir(ctx.main), topic))) return true
+  const relative = `.agents/state/${topic}`
+  if (git(['status', '--porcelain', '--', relative], { cwd: source, allowFail: true })) return true
+  const here = git(['rev-parse', `HEAD:${relative}`], { cwd: source, allowFail: true })
+  const there = git(['rev-parse', `HEAD:${relative}`], { cwd: ctx.main, allowFail: true })
+  return Boolean(here) && here !== there
+}
+
+function commandLink(ctx, options) {
+  if (ctx.isMain && !options.from) {
+    die('this is the main checkout; its own state is already where the owner looks. Run link from inside a worktree.', EXIT.refused)
+  }
+  const source = options.from ? realish(options.from) : ctx.worktree
+  const label = options.as || basename(source)
+  const candidates = topicsIn(source).filter((name) => !name.includes(LINK_MARK))
+  const wanted = options.topic
+    ? [options.topic]
+    : candidates.filter((topic) => options.all !== undefined || ownTopic(ctx, source, topic))
+  if (wanted.length === 0) {
+    die(
+      candidates.length
+        ? `nothing to link: every topic in ${stateDir(source)} is an untouched copy of the main checkout's. Name one with --topic, or use --all.`
+        : `no run state to link: ${stateDir(source)} has no topic directory`,
+      EXIT.missing,
+    )
+  }
+
+  mkdirSync(stateDir(ctx.main), { recursive: true })
+  const added = ensureExcluded(ctx.commonDir)
+  let made = 0
+
+  for (const topic of wanted) {
+    const target = join(stateDir(source), topic)
+    if (!existsSync(target)) die(`no such topic in this worktree: ${target}`, EXIT.missing)
+    const linkPath = join(stateDir(ctx.main), `${topic}${LINK_MARK}${label}`)
+    if (isLink(linkPath)) {
+      if (linkTarget(linkPath) === realish(target)) {
+        say(`already linked: ${basename(linkPath)}`)
+        continue
+      }
+      unlinkSync(linkPath)
+    } else if (existsSync(linkPath)) {
+      die(`refusing to replace a real directory: ${linkPath}`, EXIT.refused)
+    }
+    symlinkSync(target, linkPath)
+    made += 1
+    say(`${basename(linkPath)} -> ${target}`)
+  }
+
+  if (added) say(`added "${EXCLUDE_RULE}" to the repository's local info/exclude, so these links are never staged`)
+  say(`LINKED count=${made} into ${stateDir(ctx.main)}`)
+}
+
+function commandUnlink(ctx, options) {
+  const label = options.as || basename(ctx.worktree)
+  let removed = 0
+  for (const name of topicsIn(ctx.main)) {
+    if (!name.includes(LINK_MARK)) continue
+    const [topic, owner] = name.split(LINK_MARK)
+    if (options.topic && topic !== options.topic) continue
+    if (!options.all && owner !== label) continue
+    const path = join(stateDir(ctx.main), name)
+    if (!isLink(path)) continue
+    unlinkSync(path)
+    removed += 1
+    say(`removed ${name}`)
+  }
+  say(`UNLINKED count=${removed}`)
+}
+
+function commandPrune(ctx) {
+  let removed = 0
+  for (const name of topicsIn(ctx.main)) {
+    const path = join(stateDir(ctx.main), name)
+    if (!isLink(path)) continue
+    if (linkTarget(path)) continue
+    unlinkSync(path)
+    removed += 1
+    say(`removed dangling ${name}`)
+  }
+  say(`PRUNED count=${removed}`)
+}
+
+function commandList(ctx, options) {
+  const trees = worktrees()
+  const rows = []
+  const linkedTargets = new Set()
+
+  for (const name of topicsIn(ctx.main)) {
+    const path = join(stateDir(ctx.main), name)
+    const linked = isLink(path)
+    const target = linked ? linkTarget(path) : path
+    if (linked && !target) {
+      rows.push({ topic: name.split(LINK_MARK)[0], where: 'gone', dangling: true, link: name })
+      continue
+    }
+    if (linked) linkedTargets.add(target)
+    // A worktree often lives inside the main checkout, so both paths match:
+    // the longest match is the tree that really owns the state.
+    const owner = linked
+      ? trees
+          .filter((tree) => realish(target).startsWith(realish(tree.path) + '/'))
+          .sort((a, b) => realish(b.path).length - realish(a.path).length)[0] || null
+      : null
+    rows.push({
+      topic: linked ? name.split(LINK_MARK)[0] : name,
+      where: linked ? `wt ${basename(owner ? owner.path : dirname(dirname(target)))}` : 'here',
+      branch: owner ? owner.branch : linked ? null : git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: ctx.main, allowFail: true }),
+      linked,
+      link: linked ? name : null,
+      ...(readTopic(target) || { total: 0, counts: {}, updated: null }),
+    })
+  }
+
+  // A topic nobody linked is exactly what this tool exists to surface, so it is
+  // listed anyway, marked as invisible from the main checkout.
+  for (const tree of trees) {
+    if (realish(tree.path) === realish(ctx.main)) continue
+    for (const topic of topicsIn(tree.path)) {
+      if (topic.includes(LINK_MARK)) continue
+      const path = join(stateDir(tree.path), topic)
+      if (linkedTargets.has(realish(path))) continue
+      // An untouched copy inherited from the integration branch is not news.
+      if (options.all === undefined && !ownTopic(ctx, tree.path, topic)) continue
+      rows.push({
+        topic,
+        where: `wt ${basename(tree.path)}`,
+        branch: tree.branch,
+        linked: false,
+        unlinkedWorktree: true,
+        ...(readTopic(path) || { total: 0, counts: {}, updated: null }),
+      })
+    }
+  }
+
+  if (options.json !== undefined) {
+    say(JSON.stringify({ main: ctx.main, topics: rows }, null, 2))
+    return
+  }
+
+  say(`project: ${ctx.main}`)
+  if (rows.length === 0) {
+    say('no run state anywhere, nothing is in flight')
+    return
+  }
+  const width = Math.max(...rows.map((row) => row.topic.length), 5)
+  const place = Math.max(...rows.map((row) => (row.where || '').length), 5)
+  for (const row of rows) {
+    if (row.dangling) {
+      say(`${row.topic.padEnd(width)}  ${'gone'.padEnd(place)}  the worktree it pointed at is gone, run: agent-state prune`)
+      continue
+    }
+    const progress = Object.entries(row.counts)
+      .filter(([, count]) => count > 0)
+      .map(([status, count]) => `${count} ${status}`)
+      .join(' · ')
+    const tail = [
+      row.total ? progress : row.hasPlan ? 'plan only, no work packages yet' : 'no work packages',
+      row.landing ? `landing: ${row.landing}` : null,
+      row.updated ? `${ageOf(row.updated)} ago` : null,
+      row.unlinkedWorktree ? 'not linked, run: agent-state link (in that worktree)' : null,
+    ].filter(Boolean)
+    say(`${row.topic.padEnd(width)}  ${(row.where || '').padEnd(place)}  ${tail.join('  ·  ')}`)
+  }
+}
+
+// ---------------------------------------------------------------- cli
+
+const USAGE = `agent-state: see every agent's run state from one directory
+
+  agent-state link [--topic NAME] [--as LABEL]
+      Run inside a worktree. Links each of its .agents/state/<topic>/ into the
+      main checkout as <topic>@<worktree>, so the owner browses one directory and
+      still reaches the real files. Idempotent, and it teaches the repository's
+      local info/exclude to ignore these links.
+
+  agent-state list [--json]
+      Every topic in the project, the main checkout's own and every worktree's,
+      with work-package counts, anything blocked, and how long ago it moved. A
+      topic nobody linked is listed too, marked as such.
+
+  agent-state unlink [--topic NAME] [--all]
+      Remove this worktree's links. Do this when the worktree is torn down;
+      --all removes every worktree's links.
+
+  agent-state prune
+      Remove links whose worktree or topic no longer exists.
+
+Links are named <topic>@<worktree>. Real topics never contain "@", so one rule
+covers them all and no "git add -A" can stage one.`
+
+function parseFlags(argv) {
+  const options = {}
+  for (let i = 0; i < argv.length; i += 1) {
+    const flag = argv[i]
+    if (!flag.startsWith('--')) die(`unexpected argument: ${flag}`)
+    const [name, inline] = flag.slice(2).split('=')
+    const next = argv[i + 1]
+    if (inline !== undefined) {
+      options[name] = inline
+    } else if (next === undefined || next.startsWith('--')) {
+      options[name] = ''
+    } else {
+      options[name] = next
+      i += 1
+    }
+  }
+  return options
+}
+
+const argv = process.argv.slice(2)
+const verb = argv[0]
+if (!verb || verb === '--help' || verb === '-h' || verb === 'help') {
+  say(USAGE)
+  process.exit(verb ? EXIT.ok : EXIT.usage)
+}
+
+const options = parseFlags(argv.slice(1))
+const ctx = context()
+
+switch (verb) {
+  case 'link':
+    commandLink(ctx, options)
+    break
+  case 'unlink':
+    commandUnlink(ctx, options)
+    break
+  case 'prune':
+    commandPrune(ctx)
+    break
+  case 'list':
+    commandList(ctx, options)
+    break
+  default:
+    die(`unknown command: ${verb}`)
+}

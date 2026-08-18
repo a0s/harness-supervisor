@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600" viewBox="0 0 900 600" role="img" aria-labelledby="title desc">
+  <title id="title">Worktree run state published into the main checkout by symlink</title>
+  <desc id="desc">The main checkout's .agents/state directory holds its own topic directories plus one symlink per worktree topic, named topic-at-worktree. Arrows run from each link to the real state directory inside the worktree that owns it. A panel on the right covers teardown, and a panel across the bottom shows the one-screen summary agent-state list prints. Links carry no copies and are never committed.</desc>
+  <defs>
+    <marker id="arrow-teal" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L9,4.5 L0,9 Z" fill="#0d9488"/>
+    </marker>
+    <style>
+      .canvas { fill: #ffffff; }
+      .heading { font: 700 21px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+      .subheading { font: 500 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .panel { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1.5; }
+      .owner-panel { fill: #fefce8; stroke: #ca8a04; stroke-width: 2; }
+      .report-panel { fill: #f0fdfa; stroke: #0d9488; stroke-width: 1.5; }
+      .panel-title { font: 700 13.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #334155; text-anchor: middle; }
+      .panel-sub { font: 500 10px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; text-anchor: middle; }
+      .tree { font: 10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #172033; }
+      .tree-small { font: 9.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #172033; }
+      .report { font: 10.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #172033; }
+      .note { font: 600 9.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #334155; }
+      .link-row { fill: #ccfbf1; stroke: #0d9488; stroke-width: 1.2; }
+      .real-row { fill: #f1f5f9; stroke: #64748b; stroke-width: 1.2; }
+      .local-row { fill: #f1f5f9; stroke: #64748b; stroke-width: 1.2; stroke-dasharray: 5 4; }
+      .state-link { fill: none; stroke: #0d9488; stroke-width: 2; marker-end: url(#arrow-teal); }
+      .link-label { font: 700 9px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f766e; text-anchor: middle; }
+    </style>
+  </defs>
+
+  <rect class="canvas" width="900" height="600"/>
+  <text class="heading" x="450" y="34" text-anchor="middle">One place to watch every agent</text>
+  <text class="subheading" x="450" y="56" text-anchor="middle">State stays in the worktree that owns it · the main checkout holds only links · @ names the owning worktree</text>
+
+  <!-- main checkout -->
+  <rect class="owner-panel" x="20" y="76" width="290" height="290" rx="10"/>
+  <text class="panel-title" x="165" y="100">main checkout</text>
+  <text class="panel-sub" x="165" y="118">the directory the owner already watches</text>
+
+  <rect class="local-row" x="28" y="178" width="274" height="19" rx="4"/>
+  <rect class="link-row" x="28" y="200" width="274" height="19" rx="4"/>
+  <rect class="link-row" x="28" y="222" width="274" height="19" rx="4"/>
+
+  <text class="tree" xml:space="preserve" x="34" y="148">
+    <tspan x="34" dy="0">Proj-A/</tspan>
+    <tspan x="34" dy="22">└── .agents/state/</tspan>
+    <tspan x="34" dy="22">    ├── csv-export/</tspan>
+    <tspan x="34" dy="22">    ├── search-filters@worktree-a  →</tspan>
+    <tspan x="34" dy="22">    └── login-retry@worktree-b  →</tspan>
+  </text>
+  <text class="note" x="34" y="266">Real directory, worked here. No arrow.</text>
+  <text class="note" x="34" y="292">Links open into the agent's own files,</text>
+  <text class="note" x="34" y="308">not a copy, so nothing can drift.</text>
+  <text class="note" x="34" y="332">git never stages a link: one rule in the</text>
+  <text class="note" x="34" y="348">repository's local info/exclude covers *@*.</text>
+
+  <!-- worktrees -->
+  <rect class="panel" x="396" y="76" width="290" height="136" rx="10"/>
+  <text class="panel-title" x="541" y="100">worktree-a</text>
+  <rect class="real-row" x="404" y="147" width="274" height="18" rx="4"/>
+  <text class="tree" xml:space="preserve" x="410" y="124">
+    <tspan x="410" dy="0">…/Proj-A-worktree-a/  (search-filters)</tspan>
+    <tspan x="410" dy="18">└── .agents/state/</tspan>
+    <tspan x="410" dy="18">    └── search-filters/</tspan>
+    <tspan x="410" dy="18">        TODO.md · wp-1 · wp-2</tspan>
+  </text>
+  <text class="note" x="410" y="200">The agent writes here, next to its work.</text>
+
+  <rect class="panel" x="396" y="230" width="290" height="136" rx="10"/>
+  <text class="panel-title" x="541" y="254">worktree-b</text>
+  <rect class="real-row" x="404" y="301" width="274" height="18" rx="4"/>
+  <text class="tree" xml:space="preserve" x="410" y="278">
+    <tspan x="410" dy="0">…/Proj-A-worktree-b/  (login-retry)</tspan>
+    <tspan x="410" dy="18">└── .agents/state/</tspan>
+    <tspan x="410" dy="18">    └── login-retry/</tspan>
+    <tspan x="410" dy="18">        TODO.md · wp-1</tspan>
+  </text>
+  <text class="note" x="410" y="354">Recovery still reads it from inside the tree.</text>
+
+  <!-- symlink arrows -->
+  <path class="state-link" d="M312 209 C 350 209, 352 152, 390 150"/>
+  <path class="state-link" d="M312 231 C 350 231, 352 303, 390 305"/>
+  <text class="link-label" x="352" y="167">agent-state link</text>
+  <text class="link-label" x="352" y="243">agent-state link</text>
+
+  <!-- teardown -->
+  <rect class="panel" x="712" y="76" width="168" height="290" rx="10"/>
+  <text class="panel-title" x="796" y="100">teardown</text>
+  <text class="note" x="726" y="126">When the topic closes:</text>
+  <text class="tree-small" xml:space="preserve" x="726" y="150">
+    <tspan x="726" dy="0">agent-state unlink</tspan>
+    <tspan x="726" dy="18">git worktree remove</tspan>
+  </text>
+  <text class="note" x="726" y="196">A link into a tree that</text>
+  <text class="note" x="726" y="212">no longer exists is the</text>
+  <text class="note" x="726" y="228">same misinformation as</text>
+  <text class="note" x="726" y="244">a stale WP file, so it</text>
+  <text class="note" x="726" y="260">goes with the worktree.</text>
+  <text class="tree-small" x="726" y="292">agent-state prune</text>
+  <text class="note" x="726" y="316">sweeps the ones that</text>
+  <text class="note" x="726" y="332">were forgotten.</text>
+
+  <!-- summary -->
+  <rect class="report-panel" x="20" y="386" width="860" height="196" rx="10"/>
+  <text class="panel-title" x="450" y="412">agent-state list: the same answer without browsing</text>
+  <text class="report" xml:space="preserve" x="40" y="440">
+    <tspan x="40" dy="0">project: …/Proj-A</tspan>
+    <tspan x="40" dy="22">csv-export      here           3 done · 1 in-progress  ·  12m ago</tspan>
+    <tspan x="40" dy="22">search-filters  wt worktree-a  1 done · 1 in-progress  ·  landing: lock-held  ·  4m ago</tspan>
+    <tspan x="40" dy="22">login-retry     wt worktree-b  1 blocked  ·  2h ago</tspan>
+    <tspan x="40" dy="22">cache-warmup    wt worktree-c  2 in-progress  ·  not linked, run: agent-state link</tspan>
+  </text>
+  <text class="note" x="40" y="556">A topic nobody published is listed anyway, so an interrupted agent cannot hide.</text>
+  <text class="note" x="40" y="572">A link into a deleted worktree shows as gone, and agent-state prune clears it.</text>
+</svg>
