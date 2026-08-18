@@ -27,6 +27,7 @@ instructions always override it.
 | `reference/state-layout.md` | Writing durable plans, WP state, ledgers, briefs, or decision records |
 | `reference/continuity.md` | Resuming or rotating near 45% context |
 | `reference/failure-modes.md` | A run failed, or before the first supervisor brief for unfamiliar work |
+| `reference/host-resources.md` | Before running a server, external application, or heavy test runner another agent could also be running |
 
 Do not preload all references. Historical fixes in `failure-modes.md` are
 evidence, not unconditional reasons to add agents; the gates below decide.
@@ -43,6 +44,9 @@ evidence, not unconditional reasons to add agents; the gates below decide.
   known command.
 - Never let two agents edit the same file, or share a worktree, concurrently —
   including after a restart, when a misjudged liveness call is likeliest.
+- A worktree isolates files, not the machine. Lease every host-global resource a
+  command touches — ports, an external application, a device, heavy runner
+  slots — and never hardcode or hand-pick a port.
 - A claim, green build, or agent summary is not verification.
 - Nothing needed for recovery may exist only in a conversation context.
 - Out-of-scope findings are reported, not silently fixed.

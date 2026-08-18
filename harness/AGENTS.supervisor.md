@@ -12,5 +12,10 @@ when the skill routes to them.
 - Keep concrete run state local to this repository under
   `.agents/state/<topic>/`. The shared harness defines its schema but never
   shares state files between repositories.
+- A worktree isolates files, not the machine. Lease every host-global resource a
+  command touches — ports, an external application, heavy runner slots — through
+  `.agents/bin/agent-lease`, and never hardcode or hand-pick a port. Wire the
+  lease into the repository's own commands so the documented invocation is
+  already safe to type.
 - Repository-specific product, safety, trace, test, and Git rules belong in the
   repository's own `AGENTS.md` and override the harness.

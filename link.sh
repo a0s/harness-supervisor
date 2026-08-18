@@ -22,9 +22,15 @@ script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 harness_dir=$script_dir/harness
 skill_source=$harness_dir/.agents/skills/supervisor
 claude_source=$harness_dir/.claude/agents
+lease_source=$harness_dir/bin/agent-lease
 
 [ -f "$skill_source/SKILL.md" ] || {
   printf 'Harness skill is missing: %s\n' "$skill_source/SKILL.md" >&2
+  exit 66
+}
+
+[ -x "$lease_source" ] || {
+  printf 'Harness lease tool is missing or not executable: %s\n' "$lease_source" >&2
   exit 66
 }
 
@@ -56,6 +62,7 @@ ensure_link() {
 }
 
 mkdir -p \
+  "$target_repo/.agents/bin" \
   "$target_repo/.agents/skills" \
   "$target_repo/.agents/state" \
   "$target_repo/.claude/agents" \
@@ -70,12 +77,14 @@ done
 
 check_target "$skill_source" "$target_repo/.agents/skills/supervisor"
 check_target "$skill_source" "$target_repo/.claude/skills/supervisor"
+check_target "$lease_source" "$target_repo/.agents/bin/agent-lease"
 for source_path in "$claude_source"/supervisor-*.md; do
   check_target "$source_path" "$target_repo/.claude/agents/$(basename "$source_path")"
 done
 
 ensure_link "$skill_source" "$target_repo/.agents/skills/supervisor"
 ensure_link "$skill_source" "$target_repo/.claude/skills/supervisor"
+ensure_link "$lease_source" "$target_repo/.agents/bin/agent-lease"
 for source_path in "$claude_source"/supervisor-*.md; do
   ensure_link "$source_path" "$target_repo/.claude/agents/$(basename "$source_path")"
 done

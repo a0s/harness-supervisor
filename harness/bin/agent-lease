@@ -1,0 +1,390 @@
+#!/usr/bin/env node
+// agent-lease — host-wide leases for resources a worktree cannot isolate.
+//
+// A git worktree isolates files. It does not isolate the machine: TCP ports, a
+// single external application, and CPU are host-global. Two agents working on
+// unrelated branches therefore still collide through them. This tool hands out
+// those host-global resources one owner at a time and keeps a readable registry
+// of who holds what.
+//
+//   agent-lease port  [--range A-B] [--env VAR,VAR] [--label TEXT] -- cmd...
+//   agent-lease hold  NAME [--slots N] [--wait SECONDS] [--label TEXT] -- cmd...
+//   agent-lease list  [--json]
+//   agent-lease reap
+//
+// The registry is the contract, not this file. Any implementation that writes
+// the same lease files interoperates, so a repository may vendor its own copy
+// when its tests must run without the harness installed.
+
+import { openSync, writeSync, closeSync, readFileSync, unlinkSync, readdirSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { homedir, hostname, constants as osConstants } from 'node:os'
+import { createHash } from 'node:crypto'
+import { spawn } from 'node:child_process'
+import net from 'node:net'
+
+const REGISTRY = process.env.AGENT_LEASE_DIR || join(homedir(), '.agents', 'leases')
+const DEFAULT_RANGE = process.env.AGENT_LEASE_PORT_RANGE || '5300-5499'
+
+function die(message, code = 64) {
+  process.stderr.write(`agent-lease: ${message}\n`)
+  process.exit(code)
+}
+
+function ensureRegistry() {
+  mkdirSync(REGISTRY, { recursive: true })
+}
+
+// A lease is owned by a live process. EPERM means the pid exists but belongs to
+// another user, which still counts as alive.
+function alive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return error.code === 'EPERM'
+  }
+}
+
+function readLease(file) {
+  try {
+    return JSON.parse(readFileSync(join(REGISTRY, file), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+function leaseFiles() {
+  try {
+    return readdirSync(REGISTRY).filter((name) => name.endsWith('.json'))
+  } catch {
+    return []
+  }
+}
+
+// Atomic: 'wx' fails when the file exists, so two processes racing for the same
+// port or slot cannot both win. No separate registry lock is needed.
+function claim(file, record) {
+  let fd
+  try {
+    fd = openSync(join(REGISTRY, file), 'wx')
+  } catch (error) {
+    if (error.code === 'EEXIST') return false
+    throw error
+  }
+  writeSync(fd, JSON.stringify(record, null, 2) + '\n')
+  closeSync(fd)
+  return true
+}
+
+// A crashed run must not burn its resource forever. A lease whose owner is gone
+// is removed so the next caller can take it.
+function dropIfStale(file) {
+  const record = readLease(file)
+  if (record && alive(record.pid)) return false
+  try {
+    unlinkSync(join(REGISTRY, file))
+  } catch {
+    return false
+  }
+  return true
+}
+
+function release(file, pid) {
+  const record = readLease(file)
+  if (record && record.pid !== pid) return
+  try {
+    unlinkSync(join(REGISTRY, file))
+  } catch {
+    /* already gone */
+  }
+}
+
+function bindOnce(port, host) {
+  return new Promise((resolve) => {
+    const server = net.createServer()
+    server.once('error', () => resolve(false))
+    server.listen({ port, host, exclusive: true }, () => server.close(() => resolve(true)))
+  })
+}
+
+// Sequential on purpose: binding 127.0.0.1 while this same process still holds
+// 0.0.0.0 would report a false conflict.
+async function bindable(port) {
+  for (const host of ['0.0.0.0', '127.0.0.1']) {
+    if (!(await bindOnce(port, host))) return false
+  }
+  return true
+}
+
+function parseRange(text) {
+  const match = /^(\d+)-(\d+)$/.exec(text)
+  if (!match) die(`port range must look like 5300-5499, got: ${text}`)
+  const from = Number(match[1])
+  const to = Number(match[2])
+  if (from < 1024 || to > 65535 || from > to) die(`unusable port range: ${text}`)
+  return { from, to }
+}
+
+function held() {
+  return (process.env.AGENT_LEASE_HELD || '').split(',').filter(Boolean)
+}
+
+function describe(options, command) {
+  return {
+    pid: process.pid,
+    host: hostname(),
+    label: options.label || '',
+    cwd: process.cwd(),
+    command,
+    since: new Date().toISOString(),
+  }
+}
+
+// Different worktrees start scanning at different offsets, so parallel agents
+// usually take different ports on the first try instead of fighting over one.
+function scanStart(size) {
+  return createHash('sha1').update(process.cwd()).digest().readUInt32BE(0) % size
+}
+
+async function acquirePort(options, command) {
+  const { from, to } = parseRange(options.range || DEFAULT_RANGE)
+  const size = to - from + 1
+  const start = scanStart(size)
+  const waitFor = options.wait === undefined ? 60 : Number(options.wait)
+  if (!Number.isFinite(waitFor) || waitFor < 0) die(`--wait must be seconds, got: ${options.wait}`)
+
+  const deadline = Date.now() + waitFor * 1000
+  let announced = false
+  for (;;) {
+    for (let attempt = 0; attempt < size; attempt += 1) {
+      const port = from + ((start + attempt) % size)
+      const file = `port-${port}.json`
+      let mine = claim(file, describe(options, command))
+      if (!mine && dropIfStale(file)) mine = claim(file, describe(options, command))
+      if (!mine) continue
+      if (await bindable(port)) return { port, file }
+      // Leased by us but physically occupied by an unrelated process: give it back.
+      release(file, process.pid)
+    }
+    if (Date.now() >= deadline) {
+      die(`every port in ${from}-${to} is leased or occupied; run "agent-lease list" to see who holds them`, 75)
+    }
+    if (!announced) {
+      process.stderr.write(`agent-lease: ${from}-${to} is full, waiting up to ${waitFor}s for a port\n`)
+      announced = true
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+}
+
+async function acquireHold(name, options, command) {
+  const slots = Number(options.slots ?? 1)
+  if (!Number.isInteger(slots) || slots < 1) die(`--slots must be a positive integer, got: ${options.slots}`)
+  const waitFor = options.wait === undefined ? 1800 : Number(options.wait)
+  if (!Number.isFinite(waitFor) || waitFor < 0) die(`--wait must be seconds, got: ${options.wait}`)
+
+  const deadline = Date.now() + waitFor * 1000
+  let announced = false
+  for (;;) {
+    for (let slot = 0; slot < slots; slot += 1) {
+      const file = `hold-${name}--${slot}.json`
+      if (claim(file, describe(options, command))) return { file }
+      if (dropIfStale(file) && claim(file, describe(options, command))) return { file }
+    }
+    if (Date.now() >= deadline) {
+      die(`"${name}" is busy and did not free up within ${waitFor}s; run "agent-lease list"`, 75)
+    }
+    if (!announced) {
+      const owners = leaseFiles()
+        .filter((file) => file.startsWith(`hold-${name}--`))
+        .map((file) => readLease(file))
+        .filter(Boolean)
+        .map((record) => `pid ${record.pid} in ${record.cwd}`)
+      process.stderr.write(`agent-lease: waiting for "${name}", held by ${owners.join('; ') || 'an unknown owner'}\n`)
+      announced = true
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+}
+
+function runChild(command, extraEnv, files) {
+  const child = spawn(command[0], command.slice(1), {
+    stdio: 'inherit',
+    env: { ...process.env, ...extraEnv },
+  })
+
+  let released = false
+  const releaseAll = () => {
+    if (released) return
+    released = true
+    for (const file of files) release(file, process.pid)
+  }
+  process.on('exit', releaseAll)
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.on(signal, () => child.kill(signal))
+  }
+
+  child.on('error', (error) => {
+    releaseAll()
+    die(`cannot run ${command[0]}: ${error.message}`, 127)
+  })
+  child.on('exit', (code, signal) => {
+    releaseAll()
+    process.exit(signal ? 128 + (osConstants.signals[signal] || 0) : (code ?? 0))
+  })
+}
+
+function ageOf(since) {
+  const seconds = Math.max(0, Math.round((Date.now() - Date.parse(since)) / 1000))
+  if (seconds < 90) return `${seconds}s`
+  if (seconds < 5400) return `${Math.round(seconds / 60)}m`
+  return `${Math.round(seconds / 3600)}h`
+}
+
+function commandList(asJson) {
+  const rows = leaseFiles()
+    .map((file) => {
+      const resource = file.replace(/\.json$/, '')
+      const record = readLease(file)
+      if (!record) return { resource, broken: true }
+      return {
+        resource,
+        pid: record.pid,
+        state: alive(record.pid) ? 'live' : 'stale',
+        label: record.label,
+        cwd: record.cwd,
+        age: ageOf(record.since),
+        since: record.since,
+        command: record.command,
+      }
+    })
+    .sort((a, b) => a.resource.localeCompare(b.resource))
+
+  if (asJson) {
+    process.stdout.write(JSON.stringify({ registry: REGISTRY, leases: rows }, null, 2) + '\n')
+    return
+  }
+  process.stdout.write(`registry: ${REGISTRY}\n`)
+  if (rows.length === 0) {
+    process.stdout.write('no leases held\n')
+    return
+  }
+  for (const row of rows) {
+    if (row.broken) {
+      process.stdout.write(`${row.resource.padEnd(22)} unreadable lease file\n`)
+      continue
+    }
+    const head = `${row.resource.padEnd(22)} ${row.state.padEnd(5)} pid ${String(row.pid).padEnd(7)} ${row.age.padEnd(5)}`
+    process.stdout.write(`${head} ${row.label ? row.label + ' — ' : ''}${row.cwd}\n`)
+  }
+}
+
+function commandReap() {
+  let removed = 0
+  for (const file of leaseFiles()) {
+    const record = readLease(file)
+    if (record && alive(record.pid)) continue
+    try {
+      unlinkSync(join(REGISTRY, file))
+      removed += 1
+      process.stdout.write(`released ${file.replace(/\.json$/, '')}\n`)
+    } catch {
+      /* raced with another reaper */
+    }
+  }
+  process.stdout.write(`${removed} stale lease(s) released\n`)
+}
+
+function splitArgs(argv) {
+  const separator = argv.indexOf('--')
+  if (separator === -1) return { flags: argv, command: [] }
+  return { flags: argv.slice(0, separator), command: argv.slice(separator + 1) }
+}
+
+function parseFlags(flags, positional) {
+  const options = {}
+  const rest = []
+  for (let i = 0; i < flags.length; i += 1) {
+    const flag = flags[i]
+    if (flag.startsWith('--')) {
+      const [name, inline] = flag.slice(2).split('=')
+      options[name] = inline !== undefined ? inline : flags[++i]
+    } else {
+      rest.push(flag)
+    }
+  }
+  if (rest.length !== positional) {
+    die(`expected ${positional} name argument(s), got ${rest.length}`)
+  }
+  return { options, rest }
+}
+
+const USAGE = `agent-lease — host-wide leases for ports and exclusive resources
+
+  agent-lease port [--range 5300-5499] [--env VAR,VAR] [--wait SECONDS] -- cmd ...
+      Lease one free, actually bindable port and run cmd with AGENT_LEASE_PORT
+      set. Every name given to --env receives the same number.
+
+  agent-lease hold NAME [--slots N] [--wait SECONDS] [--label TEXT] -- cmd ...
+      Run cmd while holding NAME. One slot by default (a mutex); --slots N turns
+      it into a counting semaphore. Re-entrant: a nested hold of a name this
+      process already owns runs straight through.
+
+  agent-lease list [--json]     Show who holds what.
+  agent-lease reap              Release leases whose owner process is gone.
+
+Leases live in ${REGISTRY} and are released when the wrapped command exits.`
+
+async function main() {
+  const argv = process.argv.slice(2)
+  const verb = argv[0]
+
+  if (!verb || verb === '--help' || verb === '-h' || verb === 'help') {
+    process.stdout.write(USAGE + '\n')
+    process.exit(verb ? 0 : 64)
+  }
+
+  if (verb === 'list') {
+    commandList(argv.includes('--json'))
+    return
+  }
+  if (verb === 'reap') {
+    ensureRegistry()
+    commandReap()
+    return
+  }
+
+  const { flags, command } = splitArgs(argv.slice(1))
+  if (command.length === 0) die(`${verb} needs a command after "--"`)
+  ensureRegistry()
+
+  if (verb === 'port') {
+    const { options } = parseFlags(flags, 0)
+    const { port, file } = await acquirePort(options, command)
+    const names = ['AGENT_LEASE_PORT', ...String(options.env || '').split(',').filter(Boolean)]
+    const env = Object.fromEntries(names.map((name) => [name, String(port)]))
+    env.AGENT_LEASE_HELD = [...held(), `port:${port}`].join(',')
+    runChild(command, env, [file])
+    return
+  }
+
+  if (verb === 'hold') {
+    const { options, rest } = parseFlags(flags, 1)
+    const name = rest[0]
+    if (!/^[A-Za-z0-9._-]+$/.test(name)) die(`resource name must be [A-Za-z0-9._-]+, got: ${name}`)
+    if (held().includes(name)) {
+      // Already ours further up the process tree; re-acquiring would deadlock.
+      runChild(command, {}, [])
+      return
+    }
+    const { file } = await acquireHold(name, options, command)
+    runChild(command, { AGENT_LEASE_HELD: [...held(), name].join(',') }, [file])
+    return
+  }
+
+  die(`unknown command: ${verb}`)
+}
+
+main().catch((error) => die(error.stack || String(error), 70))

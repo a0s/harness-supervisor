@@ -58,7 +58,32 @@ supervisor links.
 - narrow briefs, file ownership, diff review, and evidence-based verification;
 - exact current Codex and Claude model/effort routing;
 - context rotation and cross-runtime recovery;
-- isolated worktrees, English commits, and evidence-bearing commit bodies.
+- isolated worktrees, English commits, and evidence-bearing commit bodies;
+- leasing the host-global resources a worktree cannot isolate.
+
+## Host resources
+
+A worktree isolates files, not the machine. Ports, a single external
+application, and CPU stay shared, so two agents on unrelated branches still
+collide through them — most often silently, when a test runner attaches to a
+development server another worktree had already started and reports a result
+about the wrong code.
+
+`harness/bin/agent-lease` is installed as `.agents/bin/agent-lease` and hands
+those resources out one owner at a time:
+
+```sh
+agent-lease port --env PLAYWRIGHT_PORT -- npx playwright test
+agent-lease hold rhino -- npm run parity
+agent-lease list
+```
+
+It leases, runs one command, and releases on exit or crash. Leases are files in
+`~/.agents/leases`, created with `O_EXCL` so a claim is atomic, and each carries
+its owner's pid so a dead run never burns a resource. The registry layout is the
+contract: a repository that must run its tests without the harness installed may
+vendor an equivalent tool and still interoperate. `reference/host-resources.md`
+holds the rule and the wiring checklist.
 
 Consumer repositories still define their product boundaries, trace file,
 available test layers, branch names, merge-request policy, and any stricter

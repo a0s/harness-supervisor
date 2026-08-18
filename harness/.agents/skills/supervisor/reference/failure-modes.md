@@ -46,3 +46,14 @@ an unconditional agent or ceremony.
 | Relaunched agent starts from zero | Old agent stopped before usable checkpoint | Status first; stop second |
 | Stale topic resurrects shipped work | Finished scaffolding was kept | Move durable residue to project log and delete finished topic |
 | Settled choice is relitigated | Rejected option and reason were not recorded | Append a decision record |
+
+## Host resources
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Tests pass or fail against code the branch does not contain | Runner reused a development server another worktree had already started | Lease the port and turn server reuse off; see `host-resources.md` |
+| Parallel agents fail on a port that was free a moment ago | Port picked by hand from an instruction file every agent reads | `agent-lease port --env <VAR> -- <command>` |
+| Instructions accumulate "use port X, but not Y" notes | Port ownership tracked in prose instead of a registry | Replace the note with the lease; `agent-lease list` is the record |
+| Runs against one external application interleave and wedge it | A host-global singleton was treated as per-worktree | `agent-lease hold <name> -- <command>` |
+| Unrelated heavy tests time out under parallel load | Too many concurrent runners for the machine | `agent-lease hold <name> --slots N` as a semaphore |
+| A crashed run makes a resource unusable until reboot | Ownership recorded without liveness | Leases carry a pid; dead owners are reclaimed, `agent-lease reap` forces it |
