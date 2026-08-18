@@ -137,7 +137,11 @@ chatter that changes neither `last-good` nor `next-action`.
 State written inside a worktree is published to the main checkout the moment the
 topic directory exists, with `.agents/bin/agent-state link` from that worktree,
 and unpublished with `agent-state unlink` when the topic closes or the worktree
-is torn down. The owner watches one directory rather than walking every worktree;
+is torn down. It is never committed: gitignore `.agents/state/` in the repository,
+because a tracked topic directory rides an ordinary merge into the integration
+branch and lands past that rule unnoticed. A plan that outlives its run — a
+roadmap of blocks, one worktree each — is the case that gets lost here; read
+`reference/state-layout.md` before writing one. The owner watches one directory rather than walking every worktree;
 `agent-state list` prints every topic in the project with its work-package counts
 and anything blocked.
 

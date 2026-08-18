@@ -3,17 +3,47 @@
 Read this when writing a plan, WP status, agent ledger, persisted brief, or
 decision record.
 
-## Two lifetimes
+## Three lifetimes
 
 | Lifetime | Store | Contents |
 |---|---|---|
 | Project | `WORKLOG.md` or the repository's equivalent | Goal, durable status, dated log, decisions, key coordinates |
 | One run | `.agents/state/<topic>/` | Batch plan, per-WP status, agent ledger, exact spawn briefs |
+| Many runs — a **roadmap** | `.agents/state/<topic>/TODO.md`, owned by the worktree working the current block | Goal, the owner's standing rulings, the blocks NOT yet done, constraints that still bite |
 
 Run state is recovery scaffolding. Delete a finished topic after its durable
 result has reached the project log; an empty `.agents/state/` is normal. Do not
 invent generic goal/current-state/context-summary files when the repository
 already defines a project trace.
+
+A roadmap is the third case and the one that gets lost, because it looks like run
+state and outlives every run that touches it: work planned as N blocks, one
+worktree per block, weeks apart. Four rules keep it honest.
+
+**It only holds what exists nowhere else.** Goal, the owner's rulings and
+decisions that are not yet code, the blocks still to do, and the traps that still
+bite. What a finished block learned is not repeated: what shipped is a line in the
+project log, a measured difference is an entry wherever the repository records
+those, a recovered law is a comment beside the code implementing it. So a roadmap
+SHRINKS as the work lands. One that grows is duplicating a record that already
+exists somewhere it will be read.
+
+**Emptying it is part of landing a block, not a later tidy.** The block that lands
+moves its own findings out and deletes its section in the same commit. Left for
+later, the deletion never happens and the file becomes a second, drifting history.
+
+**One owner, always the worktree working the current block.** Publish it with
+`agent-state link` from there. Landing a block hands it to the next block's
+worktree by hand — copy in under the next name, link from there, delete from
+here — or deletes it if nothing is left to do. A roadmap with no worktree is
+nobody's, and the next reader cannot tell whether it is live or abandoned.
+
+**It never enters version control.** This is the rule the other three depend on and
+the one a repository has to enforce, because git cannot see the harness: with the
+topic directory tracked, landing a branch carries it into the integration branch
+through an ordinary merge, straight past "the main checkout holds only links".
+Gitignore `.agents/state/` in the repository, and check the branch carries none of
+it before landing.
 
 ## Topic directory
 
