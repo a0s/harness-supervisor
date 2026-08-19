@@ -5,6 +5,10 @@ runtime-specific role routing, durable recovery state, and Claude subagent
 definitions, shared by every project without sharing any project's live state or
 settings.
 
+In practice: `link.sh` installs it into a repository as symlinks, `/supervisor`
+runs it, and the sections below are the mechanisms that keep several agents
+from tripping over each other on one machine.
+
 ## What it gives you
 
 - goal anchoring, diagnosis before planning, root-owned design decisions;
@@ -38,6 +42,41 @@ installer again.
 
 Links are absolute, so a consumer can live anywhere. If this checkout moves,
 remove the old broken links and rerun `link.sh` from the new location.
+
+## How to use it
+
+Open the repository in Claude Code or Codex and give the skill a task:
+
+```
+/supervisor The CSV export times out on accounts with more than 50k rows.
+Fix it, and migrate the two remaining date pickers to the new component.
+```
+
+What happens after Enter:
+
+1. The agent states in one line whether the task serves the project goal, then
+   diagnoses before planning: it reads the source and names each cause with
+   `file:line`. If a real decision branches the work, it asks once and
+   recommends an option. Everything else it decides and states.
+2. It writes the plan to `.agents/state/<topic>/TODO.md`: one work package per
+   independent piece, each with its cause, the files to change, the exact
+   verify commands, and frozen boundaries. From this point the run survives a
+   dead session, because a fresh session reads that state and continues.
+3. It picks the cheapest lane. The timeout fix and the picker migration share
+   no files, so this task gets the delegated lane: each work package runs in
+   its own git worktree with its own implementer, and a supervisor reviews
+   their diffs. A small coupled change would instead stay in the main context,
+   with no agents spawned at all.
+4. While they run, test servers take their ports through `agent-lease`, and
+   each worktree publishes its state into the main checkout. `agent-state
+   list` shows every topic, its progress, and anything blocked, on one screen.
+5. Finished work queues on `agent-merge-lock` and lands on the integration
+   branch one merge at a time, verified against real command output before it
+   goes in.
+
+If the session dies part-way, open a new one and ask it to continue. The plan,
+the work-package state, a place in the merge queue, and even a held merge lock
+are all on disk, and the resume sweep starts from them.
 
 ## How projects link to the harness
 
@@ -164,32 +203,33 @@ agent-state unlink        # when the topic closes or the worktree is torn down
 agent-state prune         # drop links whose worktree is gone
 ```
 
-- Nothing is copied. A link named `<topic>@<worktree>` points at the real
-  directory, so opening it from the main checkout puts the owner inside the
-  agent's own files, always current, with no second version to drift.
-- Nothing leaks into history. Real topics never contain `@`, so one rule in the
-  repository's local `info/exclude` covers every link and no `git add -A` can
-  stage one.
-- Nothing is committed either. Run state is scaffolding, not history: the
-  repository gitignores `.agents/state/`, because a tracked topic directory rides
-  an ordinary merge onto the integration branch and lands there unnoticed, past
-  the rule that the main checkout holds only links. Every command says so when it
-  finds tracked state, and the landing sequence checks before merging.
-- Nothing is lost in the handover. Git is not a backup once state is unversioned,
-  so a plan that outlives one run — a roadmap worked one block per worktree —
-  moves with `handover`: the directory, the new link and the old link in one step
-  that either does all three or changes nothing, instead of three things to
-  remember while tearing a worktree down. `unlink` says so too when the topic it
-  is dropping carries a `ROADMAP.md`.
-- Nothing hides. `list` reads every worktree, not just the published ones, so a
-  topic an interrupted agent never linked still shows up, marked as not linked.
-  Each row carries work-package counts, whatever is blocked, an in-flight
+- A link named `<topic>@<worktree>` points at the real directory, never at a
+  copy, so opening it from the main checkout puts the owner inside the agent's
+  own files, always current, with no second version to drift.
+- The links stay out of git history. Real topics never contain `@`, so one rule
+  in the repository's local `info/exclude` covers every link and no
+  `git add -A` can stage one.
+- The state itself stays untracked too. Run state is scaffolding, not history:
+  the repository gitignores `.agents/state/`, because a tracked topic directory
+  rides an ordinary merge onto the integration branch and lands there
+  unnoticed, past the rule that the main checkout holds only links. Every
+  command says so when it finds tracked state, and the landing sequence checks
+  before merging.
+- A handover moves state in one step. Git is not a backup once state is
+  unversioned, so a plan that outlives one run (a roadmap worked one block per
+  worktree) moves with `handover`: the directory, the new link and the old link
+  together, in a command that either does all three or changes nothing, instead
+  of three things to remember while tearing a worktree down. `unlink` warns
+  when the topic it is dropping carries a `ROADMAP.md`.
+- `list` reads every worktree, not just the published ones, so a topic an
+  interrupted agent never linked still shows up, marked as not linked. Each row
+  carries work-package counts, whatever is blocked, an in-flight
   landing, and how long ago it moved.
 - Inherited copies stay quiet. A worktree branched from a repository that tracked
   its state before the rule above carries every committed topic, and `link` and
   `list` skip the ones this worktree has not touched, so only real work shows.
 
-The links are part of the process rather than an afterthought: the skill
+The links are part of the process itself: the skill
 publishes state when a worktree topic is created, `agent-state list` opens the
 resume sweep, and unlinking belongs to tearing a worktree down, because a link
 into a deleted worktree is the same misinformation as a stale plan.
