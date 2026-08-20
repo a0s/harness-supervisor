@@ -47,6 +47,15 @@ an unconditional agent or ceremony.
 | Stale topic resurrects shipped work | Finished scaffolding was kept | Move durable residue to project log and delete finished topic |
 | Settled choice is relitigated | Rejected option and reason were not recorded | Append a decision record |
 
+## Waiting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Turns are spent and nothing changes between them | A wait was polled with no-op tool calls (`true`, `echo waiting`, re-reading an unchanged log) | One `until` loop inside a single `timeout`-wrapped command; two unchanged calls in a row is the stop signal |
+| An agent waits for ever for a run it started | It ended the turn expecting a re-invocation the runtime never sends | Establish re-invocation once from an observed notification; otherwise wait in the foreground |
+| A watcher is armed and then polled anyway | Both waiting forms used at once | Pick one: arm and end the turn, or block in the foreground |
+| A stalled peer is mistaken for a slow one | The wait had no deadline | Bound every wait; an expired wait is a finding to report, not to repeat |
+
 ## Host resources
 
 | Symptom | Cause | Fix |

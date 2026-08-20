@@ -52,6 +52,8 @@ evidence, not unconditional reasons to add agents; the gates below decide.
   holding the project's merge lock, do the preparation and the checks outside
   that lock, and release it as soon as the merge is in. Reviewed work that never
   reaches the integration branch is not done.
+- Waiting is not work, and a tool call is not free. A wait belongs inside ONE
+  blocking command, never in a loop of calls that each cost a model turn.
 - A claim, green build, or agent summary is not verification.
 - Nothing needed for recovery may exist only in a conversation context, and
   nothing in flight may be visible only inside the worktree that owns it.
@@ -225,6 +227,44 @@ Run targeted checks per WP. Run the full suite, typecheck/build, and repository
 health checks once after the integrated diff unless the plan names an earlier
 gate. A runner that remains unavailable after the normal remedy makes the WP
 `blocked`, not done.
+
+## Waiting for a run, a lock, or another agent
+
+Waiting is the one activity where an agent can spend real money and produce
+nothing at all. Every tool call is a billed model round trip — including `true`,
+`echo waiting`, `date`, and re-reading a log that has not changed. A dozen of
+them in a row is not patience, it is the most expensive possible way to do
+nothing, and it is invisible in any log that only records what changed.
+
+**Default: put the whole wait inside ONE command.** One call, one round trip,
+however long the wait lasts:
+
+```sh
+timeout -s KILL 1800 sh -c 'until <condition>; do sleep 20; done; <report>'
+```
+
+`<condition>` is the thing actually being waited on — a summary line reaching a
+log, `git rev-parse <branch>` changing, a lock leaving `HELD_BY_OTHER`, a pid
+disappearing. Print the result in the same command, so the waiting and the
+reading of the answer are a single call. This form needs no assumption about
+the runtime and works everywhere.
+
+**The background form is allowed only where re-invocation is a known fact.**
+Some runtimes wake an agent when a background task completes; others leave it
+asleep for ever, and an agent that ends its turn "waiting" in one of those has
+simply stopped. Establish which one you are in ONCE, from an observed
+notification, not from hope. Where it holds, arm exactly one watcher and end the
+turn with prose and no tool call. Never arm a watcher and then keep checking on
+it: that is both forms at once, and it pays for the expensive one.
+
+**Two tool calls in a row that changed nothing mean you are in a poll loop.**
+Stop at the second, not the tenth, and replace the loop with a single blocking
+wait. Re-checking a condition you have already armed a watcher for is the same
+mistake wearing a different hat.
+
+Bound every wait with a deadline chosen before it starts. A wait that runs out
+is a finding — a stalled agent, a wedged lock, a run that died — and is reported
+as one. It is never a reason to start waiting again.
 
 ## Stalls, recovery, and rotation
 

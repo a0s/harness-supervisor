@@ -20,7 +20,8 @@ from tripping over each other on one machine.
 - isolated worktrees, English commits, evidence-bearing commit bodies;
 - leases for the host-global resources a worktree cannot isolate;
 - a queue for the integration branch, so every agent's work actually lands;
-- one directory where the owner sees what every agent is doing.
+- one directory where the owner sees what every agent is doing;
+- one rule for waiting, so an agent cannot bill a poll loop for doing nothing.
 
 Each consumer repository still defines its own product boundaries, trace file,
 test layers, branch names, merge-request policy, and any stricter safety rules.
