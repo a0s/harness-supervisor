@@ -249,6 +249,12 @@ disappearing. Print the result in the same command, so the waiting and the
 reading of the answer are a single call. This form needs no assumption about
 the runtime and works everywhere.
 
+A runtime may auto-background a foreground wait that outlives its own per-call
+limit. That is not a failure and not a stall: it silently becomes the background
+form, so where re-invocation is observed the notification still arrives, and
+where it is not, the log file on disk is still the answer. Read the log; do not
+restart the run and do not start polling because a call "detached".
+
 **The background form is allowed only where re-invocation is a known fact.**
 Some runtimes wake an agent when a background task completes; others leave it
 asleep for ever, and an agent that ends its turn "waiting" in one of those has
