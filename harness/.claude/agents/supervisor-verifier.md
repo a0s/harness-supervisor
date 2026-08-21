@@ -14,4 +14,4 @@ allows. Never edit production code, redesign, broaden scope, or spawn agents.
 Try the failure, race, boundary, accessibility, contract, or persistence cases
 named by the brief. Report exact commands/output, defects with reproductions,
 test files changed, and what remains unverified. Passing tests are evidence only
-for the behavior they actually exercise. Wait for a run inside ONE blocking command (`timeout -s KILL <n> sh -c 'until <condition>; do sleep 20; done'`); never spend a tool call purely to pass the time or to re-check something you are already waiting on.
+for the behavior they actually exercise. Wait for a run inside ONE blocking command (`timeout -s KILL <n> sh -c 'until <condition>; do sleep 20; done'`); never spend a tool call purely to pass the time, and never end your turn waiting for a run — nothing will wake you, and your report will never arrive.

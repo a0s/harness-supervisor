@@ -263,6 +263,13 @@ notification, not from hope. Where it holds, arm exactly one watcher and end the
 turn with prose and no tool call. Never arm a watcher and then keep checking on
 it: that is both forms at once, and it pays for the expensive one.
 
+The two roles do not get the same answer. Root is normally re-invoked; a
+**subagent normally is not** — it ends its turn "waiting", and nothing ever
+wakes it, so its run finishes into an empty room and its supervisor waits for a
+report that will never come. Treat the foreground blocking form as the ONLY
+form available to a subagent, say so in its brief, and check on one that has
+gone quiet rather than assuming it is thinking.
+
 **Two tool calls in a row that changed nothing mean you are in a poll loop.**
 Stop at the second, not the tenth, and replace the loop with a single blocking
 wait. Re-checking a condition you have already armed a watcher for is the same
