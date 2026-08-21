@@ -11,6 +11,7 @@ an unconditional agent or ceremony.
 | Plausible code solves the wrong problem | Diagnosis or design was delegated | Root owns cause and decisions; scouts return facts only |
 | Supervisor reports success but behavior is broken | It reviewed summaries, not artifacts | Read the diff and real output; compare behavior to the WP |
 | Tests mirror implementation and miss the defect | No independent observable-behavior check | Fire the verifier gate and brief a fresh black-box verifier |
+| A re-pinned threshold quietly decommissions its test | A moved test was re-fitted to its new input's numbers without checking it still separates working from broken | Compare the new threshold against the value the ORIGINAL defect produced; if both sides of the fix pass it, the test is dead, not adjusted |
 | Ordinary work pays for two full implementations | Test author split by title, not risk | Implementer writes focused tests; separate verifier only when the risk gate fires |
 | Scope creep | Brief omitted frozen boundaries | Add per-WP allowed files and **Do NOT** fences |
 | Agents conflict | Parallel topics touch the same files | Sequence by file ownership, not topic name |
