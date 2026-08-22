@@ -6,8 +6,9 @@ description: >
   work that needs an on-disk plan, genuinely independent workstreams, context
   isolation, an architectural decision, recovery after interruption, or a
   stalled work package. Applying the skill does not automatically mean spawning
-  agents: tightly coupled sequential work stays in the root context. Do not use
-  for questions or small single-file changes.
+  agents: work that is safe in the local integration checkout may stay in the
+  root context, while work that requires isolation uses a supervisor-owned
+  worktree. Do not use for questions or small single-file changes.
 ---
 
 # Supervised work
@@ -39,6 +40,12 @@ evidence, not unconditional reasons to add agents; the gates below decide.
   facts; it does not decide what they mean.
 - Never delegate design decisions or work whose hard part is deciding what to
   build.
+- If implementation cannot safely happen in the local integration checkout
+  because another agent may collide with it or an isolated branch is required,
+  root creates a dedicated worktree and spawns a supervisor to own it. Root does
+  not enter that worktree to implement the change itself.
+- The integration checkout's `.agents/state/` contains only symlinks published
+  from owning worktrees. Never create a real topic directory there.
 - A supervisor reviews diffs and real output. It does not write production code,
   except a tiny correction after an implementer has landed almost all of a WP.
 - Never pay reasoning-model rates for grep, counts, monitoring, or rerunning one
@@ -65,14 +72,16 @@ Use the cheapest lane that preserves the needed context and evidence.
 
 ### Root-only lane
 
-Keep execution in root when work is sequential, tightly coupled, or fits cleanly
-in the current context. This includes diagnosis, architecture, and most one-WP
-changes. A three-step checklist alone is not a reason to create a three-level
-agent tree. Root may use one bounded direct scout or black-box verifier; that
-alone does not justify an extra supervisor context.
+Keep execution in root only when it is safe in the local integration checkout:
+no other agent can collide with it and no isolated branch is required. This
+includes diagnosis, architecture, and small tightly coupled changes. A one-WP
+change is not automatically root-only; the isolation rule above wins. Root may
+use one bounded direct scout or black-box verifier; that alone does not justify
+an extra supervisor context.
 
-Root still writes a durable plan when the task may outlive the session and still
-runs the required checks.
+Root still writes durable intent to the project's trace when the task may
+outlive the session and still runs the required checks. It does not create a
+real topic directory in the integration checkout.
 
 ### Delegated lane
 
@@ -86,10 +95,14 @@ Spawn a supervisor only when at least one condition is true:
    one supervisor can integrate compact results and own recovery.
 4. An interrupted run already has supervisors recorded in durable state, or the
    user explicitly requested supervised parallel delegation.
+5. Implementation must be isolated from the local integration checkout because
+   another agent may collide with it or an isolated branch is required. This
+   condition is sufficient even for one sequential WP.
 
 If work is sequential and shares reasoning or state, do not insert a supervisor
-merely to relay messages. Work that cannot be split by context should not be
-split by role.
+merely to relay messages unless isolation condition 5 applies. A worktree is not
+an alternative root workspace: root delegates ownership of it to the spawned
+supervisor.
 
 When this lane is selected, read `reference/runtime.md` once before spawning.
 Use its exact runtime-specific models, effort fields, role names, and tool map;
@@ -119,8 +132,9 @@ workarounds as decision records using `reference/state-layout.md`.
 
 ## Phase 3: write durable intent
 
-For delegated or interruption-prone work, create
-`.agents/state/<topic>/TODO.md` before execution. Each WP contains only:
+For delegated work, first create its dedicated worktree, then create
+`.agents/state/<topic>/TODO.md` inside that worktree before execution. Each WP
+contains only:
 
 - **Cause:** `file:line`, mechanism.
 - **Do:** concrete files and behavior.
@@ -129,8 +143,9 @@ For delegated or interruption-prone work, create
 
 At top level add hard constraints, definition of done, file-based execution
 order, and out-of-scope findings. Use per-WP status and the root-owned ledger as
-defined in `reference/state-layout.md`. Root-only work that is short and
-recoverable may use the harness checklist without delegation state.
+defined in `reference/state-layout.md`. Root-only work uses the project trace or
+an in-context checklist without a real topic directory in the integration
+checkout.
 
 The plan holds intent; WP files hold mutable truth. Update a WP after a material
 state transition and before handing it to another agent. Do not journal scout

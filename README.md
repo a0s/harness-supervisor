@@ -13,7 +13,7 @@ from tripping over each other on one machine.
 
 - goal anchoring, diagnosis before planning, root-owned design decisions;
 - root-only versus delegated lane gates;
-- local `.agents/state/<topic>/` plans, WP checkpoints, ledgers, and recovery;
+- worktree-local `.agents/state/<topic>/` plans, WP checkpoints, ledgers, and recovery;
 - narrow briefs, file ownership, diff review, evidence-based verification;
 - exact current Codex and Claude model/effort routing;
 - context rotation and cross-runtime recovery;
@@ -59,16 +59,15 @@ What happens after Enter:
    diagnoses before planning: it reads the source and names each cause with
    `file:line`. If a real decision branches the work, it asks once and
    recommends an option. Everything else it decides and states.
-2. It writes the plan to `.agents/state/<topic>/TODO.md`: one work package per
-   independent piece, each with its cause, the files to change, the exact
-   verify commands, and frozen boundaries. From this point the run survives a
-   dead session, because a fresh session reads that state and continues.
-3. It picks the cheapest lane. The timeout fix and the picker migration share
-   no files, so this task gets the delegated lane: each work package runs in
-   its own git worktree with its own implementer, and a supervisor reviews
-   their diffs. A small coupled change would instead stay in the main context,
-   with no agents spawned at all.
-4. While they run, test servers take their ports through `agent-lease`, and
+2. It picks the cheapest safe lane. Work stays in the root context only when it
+   is safe in the local integration checkout. Any implementation that needs
+   isolation creates a dedicated worktree and a supervisor to own it, even when
+   it is one sequential work package.
+3. In each delegated worktree it writes `.agents/state/<topic>/TODO.md`, then
+   publishes that directory into the main checkout as a symlink. The timeout
+   fix and picker migration share no files, so each can run in its own worktree;
+   a small change safe in the integration checkout needs no agent or topic.
+4. While delegated work runs, test servers take their ports through `agent-lease`, and
    each worktree publishes its state into the main checkout. `agent-state
    list` shows every topic, its progress, and anything blocked, on one screen.
 5. Finished work queues on `agent-merge-lock` and lands on the integration
@@ -183,10 +182,9 @@ one machine never queue behind each other and no `git add -A` can sweep them up.
 
 ## Watching every agent from one directory
 
-![The main checkout's state directory holds its own topics plus one symlink per
-worktree topic, each named topic-at-worktree and pointing at the real directory
-inside the worktree that owns it, next to the one-screen summary agent-state list
-prints](docs/state-visibility.svg)
+![The main checkout's state directory holds one symlink per worktree topic, each
+named topic-at-worktree and pointing at the real directory inside the worktree
+that owns it, next to the one-screen summary agent-state list prints](docs/state-visibility.svg)
 
 Run state belongs beside the work it describes, so an agent in its own worktree
 writes `.agents/state/<topic>/` inside that worktree. That is right for recovery
