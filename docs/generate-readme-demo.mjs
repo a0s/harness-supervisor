@@ -194,7 +194,6 @@ function frame(stage, index) {
     <linearGradient id="glow" x1="0" x2="1"><stop stop-color="#1f6feb"/><stop offset="1" stop-color="#8957e5"/></linearGradient>
     <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#0d1117" flood-opacity=".26"/></filter>
   </defs>
-  <rect width="1200" height="700" fill="#f6f8fa"/>
   <rect x="28" y="26" width="1144" height="848" rx="16" fill="#0d1117" filter="url(#shadow)"/>
   <rect x="28" y="26" width="1144" height="54" rx="16" fill="#161b22"/>
   <path d="M28 64h1144v16H28z" fill="#161b22"/>
@@ -238,7 +237,9 @@ try {
       framePaths.push(png)
     }
   }
-  execFileSync('magick', [...framePaths, '-resize', '1200x900', '-layers', 'Optimize', '-delay', '14', '-loop', '0', output], { stdio: 'inherit' })
+  // Keep complete frames with `background` disposal. `-layers Optimize` emits
+  // partial frames with Dispose: None, which can leave stale pixels in browsers.
+  execFileSync('magick', [...framePaths, '-resize', '1200x900', '-background', 'none', '-alpha', 'on', '-dispose', 'background', '-delay', '14', '-loop', '0', output], { stdio: 'inherit' })
   check()
 } finally {
   rmSync(temp, { recursive: true, force: true })
