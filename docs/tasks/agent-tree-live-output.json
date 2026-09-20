@@ -1,7 +1,7 @@
 {
   "id": "agent-tree-live-output",
   "planRevision": "a425ec0e67c43feef076a5cde2f388b96a71b1d6",
-  "revision": "67bafc4d53936ace6fc75e7af43375cfe6928f9df6f52d54492c73dbd553cf59",
+  "revision": "e5db55d102ff8e40fe51e503a337bdc2f2db9e28ed49a0931780939cd9bab5cf",
   "status": "ready",
   "kind": "bug",
   "goal": "Make the live agent-tree monitor accurately communicate active agent hierarchy and runtime metadata in English.",
@@ -90,7 +90,7 @@
   ],
   "plannerReview": {
     "reviewer": "codex",
-    "assessment": "The diagnosed renderer and snapshot omissions directly explain the reported output. The additive metadata contract, explicit unknown fallback, ANSI-only interactive styling, and independent checks settle the interfaces without asserting unavailable runtime fields.",
-    "approvedRevision": "67bafc4d53936ace6fc75e7af43375cfe6928f9df6f52d54492c73dbd553cf59"
+    "assessment": "The renderer and snapshot behavior remains settled; the only revision changes the English-content check to an equivalent Unicode property so the check does not violate its own criterion.",
+    "approvedRevision": "e5db55d102ff8e40fe51e503a337bdc2f2db9e28ed49a0931780939cd9bab5cf"
   }
 }
