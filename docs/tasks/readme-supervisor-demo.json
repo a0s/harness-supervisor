@@ -1,0 +1,80 @@
+{
+  "id": "readme-supervisor-demo",
+  "planRevision": "b5b5a799390a2dbd07c8aa4bffd27493651212a2",
+  "revision": "50686958256dd3555e09b7711b24c02712cf711351b23dbdf36a1efd057e6706",
+  "status": "ready",
+  "kind": "feature",
+  "goal": "Replace the README's opening process diagram with a compelling, reproducible animated supervisor demo.",
+  "behavior": "The README opens with an animated 4:3 split-terminal GIF that shows a supervisor starting work and a live agent tree changing as subagents work and finish.",
+  "facts": [
+    "GitHub renders GIF files in repository Markdown, but does not support inline SVG animation or scripting.",
+    "The existing README opens with a Mermaid process diagram.",
+    "agent-tree renders session and subagent hierarchy, including running and stopped statuses.",
+    "A roughly 120 by 50-cell terminal reads naturally at a 4:3 aspect ratio with this monospace layout."
+  ],
+  "boundaries": [
+    "Do not change harness runtime behavior or the agent-tree implementation.",
+    "Keep the asset and its generator in docs so they are clearly documentation-only."
+  ],
+  "interfaces": [
+    "README.md references docs/supervisor-demo.gif with useful alt text.",
+    "docs/generate-readme-demo.mjs is executable and regenerates the committed GIF."
+  ],
+  "dependencies": [
+    "Node.js 20 or later",
+    "librsvg's rsvg-convert command for SVG rasterization",
+    "ImageMagick's magick command for GIF encoding"
+  ],
+  "criteria": [
+    {
+      "id": 1,
+      "outcome": "The README begins with the animated demo instead of the Mermaid diagram.",
+      "checks": [
+        "readme-check"
+      ]
+    },
+    {
+      "id": 2,
+      "outcome": "The demo visibly changes a right-hand agent tree while supervisor work proceeds in the left terminal pane.",
+      "checks": [
+        "gif-check"
+      ]
+    },
+    {
+      "id": 3,
+      "outcome": "A documentation-only executable regenerates the GIF deterministically enough to reproduce the asset.",
+      "checks": [
+        "generator-check"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "readme-check",
+      "command": "node --input-type=module --eval \"import { readFileSync } from 'node:fs'; const s = readFileSync('README.md', 'utf8'); if (!s.includes('docs/supervisor-demo.gif') || s.includes(String.fromCharCode(96).repeat(3) + 'mermaid')) process.exit(1)\""
+    },
+    {
+      "id": "gif-check",
+      "command": "magick identify docs/supervisor-demo.gif"
+    },
+    {
+      "id": "generator-check",
+      "command": "node --check docs/generate-readme-demo.mjs && ./docs/generate-readme-demo.mjs --check"
+    }
+  ],
+  "escalation": [
+    "Escalate if ImageMagick cannot produce a GIF that GitHub renders."
+  ],
+  "decisions": [
+    {
+      "id": "format",
+      "status": "resolved",
+      "summary": "Use an animated GIF because GitHub renders it in README files while it disables SVG animation and inline scripting."
+    }
+  ],
+  "plannerReview": {
+    "reviewer": "codex",
+    "assessment": "The 4:3 canvas and roughly 120 by 50-cell terminal geometry are settled with the split panes. The criteria directly observe README replacement, dynamic tree states, and reproducible GIF generation without changing runtime code.",
+    "approvedRevision": "50686958256dd3555e09b7711b24c02712cf711351b23dbdf36a1efd057e6706"
+  }
+}

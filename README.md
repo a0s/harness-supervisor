@@ -7,13 +7,13 @@ reserve local resources, retain verification evidence, and land a completed
 change safely. It keeps durable decisions in Git and run-specific state local to
 the checkout.
 
-```mermaid
-flowchart LR
-  Plan[Ready task contract] --> Build[Implementation]
-  Build --> Verify[Recorded verification]
-  Verify --> Land[Serialized landing]
-  State[Local run state] -. visible across worktrees .-> Build
-```
+![Animated split terminal: a supervisor launches a task on the left while a live agent tree on the right grows as subagents work, verify, and finish.](docs/supervisor-demo.gif)
+
+The supervisor turns one ready task into visible, verifiable parallel work — with
+the live agent tree keeping every session in view.
+
+Regenerate this documentation-only animation with
+[`docs/generate-readme-demo.mjs`](docs/generate-readme-demo.mjs).
 
 ## What you get
 
