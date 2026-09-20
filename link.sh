@@ -35,13 +35,14 @@ state_source=$harness_dir/bin/agent-state
 task_source=$harness_dir/bin/agent-task
 verify_source=$harness_dir/bin/agent-verify
 doctor_source=$harness_dir/bin/agent-doctor
+tree_source=$harness_dir/bin/agent-tree
 
 [ -f "$skill_source/SKILL.md" ] || {
   printf 'Harness skill is missing: %s\n' "$skill_source/SKILL.md" >&2
   exit 66
 }
 
-for tool_path in "$lease_source" "$merge_lock_source" "$state_source" "$task_source" "$verify_source" "$doctor_source"; do
+for tool_path in "$lease_source" "$merge_lock_source" "$state_source" "$task_source" "$verify_source" "$doctor_source" "$tree_source"; do
   [ -x "$tool_path" ] || {
     printf 'Harness tool is missing or not executable: %s\n' "$tool_path" >&2
     exit 66
@@ -122,6 +123,8 @@ for source_path in "$claude_source"/supervisor-*.md; do
   ensure_link "$source_path" "$target_repo/.claude/agents/$(basename "$source_path")"
 done
 
+node "$tree_source" _install "$target_repo"
+printf 'Note: git worktree add --no-checkout defers agent-tree setup until checkout; rerun link.sh if checkout is skipped.\n' >&2
 printf 'Supervisor harness linked into %s\n' "$target_repo"
 printf 'Merge %s into the repository AGENTS.md if not already present.\n' "$harness_dir/AGENTS.supervisor.md"
 printf 'For Claude Code, confirm instruction loading in a fresh session; merge or reference the same rules in CLAUDE.md if needed.\n'

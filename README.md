@@ -99,3 +99,15 @@ npm run check
 
 Read [task-contract.md](docs/task-contract.md) for the task format and review
 rules.
+
+## Live agent tree
+
+After `link.sh` completes, run this from any worktree of the target repository:
+
+```sh
+.bin/agent-tree
+```
+
+The display refreshes every two seconds; stop it with `Ctrl-C`. Use `--codex`
+or `--claude-code` to filter, and `--json` for one machine-readable snapshot.
+See [monitor details](docs/agent-tree-plan.md).

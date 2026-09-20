@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "check": "node --check harness/bin/agent-state && node --check harness/bin/agent-lease && node --check harness/bin/agent-merge-lock && node --check harness/bin/agent-task && node --check harness/bin/agent-verify && node --check harness/bin/agent-doctor && sh -n link.sh"
+    "check": "node --check harness/bin/agent-state && node --check harness/bin/agent-lease && node --check harness/bin/agent-merge-lock && node --check harness/bin/agent-task && node --check harness/bin/agent-verify && node --check harness/bin/agent-doctor && node --check harness/bin/agent-tree && node --check harness/lib/agent-tree.mjs && sh -n link.sh"
   },
   "engines": { "node": ">=20" }
 }
