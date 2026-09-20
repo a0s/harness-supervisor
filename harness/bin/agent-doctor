@@ -69,7 +69,7 @@ const report = {
   },
   capability: {
     codexDelegation: codex.installed ? 'probe in an active session' : 'unavailable',
-    claudeNestedDelegation: !claude.installed ? 'unavailable' : depth && Number(depth) < 2 ? 'disabled by depth setting' : 'probe at coordinator depth',
+    claudeNestedDelegation: depth && Number(depth) < 2 ? 'disabled by depth setting' : !claude.installed ? 'unavailable' : 'probe at coordinator depth',
     modelAvailability: 'query the active runtime; CLI presence does not prove model access',
     instructionLoading: 'probe in a fresh runtime session; file presence is not proof of loading',
   },
