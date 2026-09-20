@@ -1,19 +1,22 @@
 {
   "id": "agent-tree-live-output",
   "planRevision": "185712819eea921cccaaac4755fad2cfa6e91b67",
-  "revision": "5067706468ae534209799975b4bbbf413956b74328a36e58db2de9ebdf074eea",
+  "revision": "4ea6cbe32c4ab4c0d009741202eddc5cf78b14a4e3fb8c7ca4e73380a8d2f6ad",
   "status": "ready",
   "kind": "bug",
   "goal": "Make the live agent-tree monitor accurately communicate active agent hierarchy and runtime metadata in English.",
-  "behavior": "The interactive monitor refreshes a colorized tree, labels uncertain parentage in English, and shows model and effort for every event-backed subagent; JSON remains structured and uncolored.",
+  "behavior": "The interactive monitor refreshes a concise colorized live tree, labels uncertain parentage in English, and shows each event-backed agent's normalized model/effort slug pair; JSON remains structured and uncolored.",
   "facts": [
     "The installed monitor writes hook payloads to the shared Git directory and already keeps an additive node object per observed agent.",
-    "Interactive mode redraws every two seconds, while --json emits one snapshot."
+    "Interactive mode redraws every two seconds, while --json emits one snapshot.",
+    "Claude Code SubagentStop payloads provide effort as an object such as { level: medium }, omit the model, and identify the parent session through session_id.",
+    "Claude Code session transcripts contain assistant message.model and effort values even when the hook payload omits them."
   ],
-  "cause": "The renderer hard-codes a Russian parentage label and emits plain text only. Snapshot nodes do not retain model or effort from hook payloads, and process-only sessions are not explicitly distinguished from event-backed agents.",
+  "cause": "The current metadata extractor accepts non-scalar effort objects and only reads shallow transcript fields. It does not link a Claude subagent to its session_id parent, retains stale stopped and unknown nodes for 24 hours, or filters Claude background-spare processes before session matching.",
   "boundaries": [
     "Do not alter global user configuration or hook installation behavior beyond recording available runtime metadata.",
     "Do not claim model or effort for a process-only session when no source provides it.",
+    "Do not retain stale stopped or processless unknown agents as live-tree nodes beyond the documented short retention periods.",
     "Keep the existing command-line flags and JSON snapshot shape compatible; new fields are additive."
   ],
   "interfaces": [
@@ -56,6 +59,13 @@
         "agent-tree-tests",
         "english-scan"
       ]
+    },
+    {
+      "id": 5,
+      "outcome": "Claude model and effort metadata are scalar slugs rendered as model/effort, subagents nest below their session parent, background-spare processes do not create nodes, and stale historical nodes are pruned from the live view.",
+      "checks": [
+        "agent-tree-tests"
+      ]
     }
   ],
   "checks": [
@@ -86,11 +96,21 @@
       "id": "interactive-palette",
       "status": "resolved",
       "summary": "Use ANSI colors only in interactive rendering: green for running, dim gray for stopped, yellow for unknown, and dim annotation text. Preserve uncolored JSON."
+    },
+    {
+      "id": "live-retention",
+      "status": "resolved",
+      "summary": "Retain stopped nodes for five minutes and processless unknown nodes for fifteen minutes. Omit Claude bg-spare helper processes from the tree."
+    },
+    {
+      "id": "metadata-format",
+      "status": "resolved",
+      "summary": "Normalize metadata to nonempty scalar slugs, remove the claude- prefix from Claude model slugs, and render model/effort as one compact pair."
     }
   ],
   "plannerReview": {
     "reviewer": "codex",
-    "assessment": "The history rewrite changed the durable plan commit identity. This revision updates only that reference and reaffirms the previously settled observable behavior and checks.",
-    "approvedRevision": "5067706468ae534209799975b4bbbf413956b74328a36e58db2de9ebdf074eea"
+    "assessment": "Real Voxik hook and transcript evidence resolves the implementation choices: normalize scalar metadata, derive missing values from the event transcript, use session_id as the Claude subagent parent, prune stale nodes, and exclude bg-spare helpers. The acceptance criteria directly observe all reported defects.",
+    "approvedRevision": "4ea6cbe32c4ab4c0d009741202eddc5cf78b14a4e3fb8c7ca4e73380a8d2f6ad"
   }
 }
