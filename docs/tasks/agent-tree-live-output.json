@@ -1,0 +1,96 @@
+{
+  "id": "agent-tree-live-output",
+  "planRevision": "a425ec0e67c43feef076a5cde2f388b96a71b1d6",
+  "revision": "67bafc4d53936ace6fc75e7af43375cfe6928f9df6f52d54492c73dbd553cf59",
+  "status": "ready",
+  "kind": "bug",
+  "goal": "Make the live agent-tree monitor accurately communicate active agent hierarchy and runtime metadata in English.",
+  "behavior": "The interactive monitor refreshes a colorized tree, labels uncertain parentage in English, and shows model and effort for every event-backed subagent; JSON remains structured and uncolored.",
+  "facts": [
+    "The installed monitor writes hook payloads to the shared Git directory and already keeps an additive node object per observed agent.",
+    "Interactive mode redraws every two seconds, while --json emits one snapshot."
+  ],
+  "cause": "The renderer hard-codes a Russian parentage label and emits plain text only. Snapshot nodes do not retain model or effort from hook payloads, and process-only sessions are not explicitly distinguished from event-backed agents.",
+  "boundaries": [
+    "Do not alter global user configuration or hook installation behavior beyond recording available runtime metadata.",
+    "Do not claim model or effort for a process-only session when no source provides it.",
+    "Keep the existing command-line flags and JSON snapshot shape compatible; new fields are additive."
+  ],
+  "interfaces": [
+    "agent-tree [--codex|--claude-code] [--json]",
+    "Codex and Claude Code hook JSON payloads with optional model and effort fields",
+    "docs/agent-tree-plan.md"
+  ],
+  "dependencies": [
+    "Node.js 20 or later",
+    "ANSI-capable terminal for colorized interactive output"
+  ],
+  "criteria": [
+    {
+      "id": 1,
+      "outcome": "All tracked product text and rendered labels are English; an unknown parent is labeled 'parent unknown'.",
+      "checks": [
+        "agent-tree-tests",
+        "english-scan"
+      ]
+    },
+    {
+      "id": 2,
+      "outcome": "Interactive output conveys live state with ANSI color and refreshes while --json stays valid, uncolored machine-readable data.",
+      "checks": [
+        "agent-tree-tests",
+        "syntax-check"
+      ]
+    },
+    {
+      "id": 3,
+      "outcome": "Every event-backed subagent includes model and effort in snapshot and render output, using 'unknown' when an event lacks either value; process-only sessions remain visibly source-limited.",
+      "checks": [
+        "agent-tree-tests"
+      ]
+    },
+    {
+      "id": 4,
+      "outcome": "The documented monitor behavior matches the shipped output.",
+      "checks": [
+        "agent-tree-tests",
+        "english-scan"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "agent-tree-tests",
+      "command": "node --test test/agent-tree.test.mjs"
+    },
+    {
+      "id": "syntax-check",
+      "command": "npm run check"
+    },
+    {
+      "id": "english-scan",
+      "command": "! rg -n '\\p{Cyrillic}' harness docs README.md test"
+    }
+  ],
+  "escalation": [
+    "Escalate if either runtime does not expose model or effort in any hook or recoverable transcript payload, because obtaining it would require a new runtime integration.",
+    "Escalate if ANSI output must support a terminal capability policy beyond NO_COLOR."
+  ],
+  "decisions": [
+    {
+      "id": "metadata-fallback",
+      "status": "resolved",
+      "summary": "Use an explicit 'unknown' value when available data has no model or effort rather than infer values from process names."
+    },
+    {
+      "id": "interactive-palette",
+      "status": "resolved",
+      "summary": "Use ANSI colors only in interactive rendering: green for running, dim gray for stopped, yellow for unknown, and dim annotation text. Preserve uncolored JSON."
+    }
+  ],
+  "plannerReview": {
+    "reviewer": "codex",
+    "assessment": "The diagnosed renderer and snapshot omissions directly explain the reported output. The additive metadata contract, explicit unknown fallback, ANSI-only interactive styling, and independent checks settle the interfaces without asserting unavailable runtime fields.",
+    "approvedRevision": "67bafc4d53936ace6fc75e7af43375cfe6928f9df6f52d54492c73dbd553cf59"
+  }
+}
