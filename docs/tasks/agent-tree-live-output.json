@@ -1,7 +1,7 @@
 {
   "id": "agent-tree-live-output",
-  "planRevision": "a425ec0e67c43feef076a5cde2f388b96a71b1d6",
-  "revision": "e5db55d102ff8e40fe51e503a337bdc2f2db9e28ed49a0931780939cd9bab5cf",
+  "planRevision": "185712819eea921cccaaac4755fad2cfa6e91b67",
+  "revision": "5067706468ae534209799975b4bbbf413956b74328a36e58db2de9ebdf074eea",
   "status": "ready",
   "kind": "bug",
   "goal": "Make the live agent-tree monitor accurately communicate active agent hierarchy and runtime metadata in English.",
@@ -90,7 +90,7 @@
   ],
   "plannerReview": {
     "reviewer": "codex",
-    "assessment": "The renderer and snapshot behavior remains settled; the only revision changes the English-content check to an equivalent Unicode property so the check does not violate its own criterion.",
-    "approvedRevision": "e5db55d102ff8e40fe51e503a337bdc2f2db9e28ed49a0931780939cd9bab5cf"
+    "assessment": "The history rewrite changed the durable plan commit identity. This revision updates only that reference and reaffirms the previously settled observable behavior and checks.",
+    "approvedRevision": "5067706468ae534209799975b4bbbf413956b74328a36e58db2de9ebdf074eea"
   }
 }
