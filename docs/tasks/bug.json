@@ -1,0 +1,41 @@
+{
+  "id": "example-bug",
+  "planRevision": "a34bf777c38b624b7bf624651338eb4e431dde0d",
+  "revision": "1ad4696e62dc911f2438d24e49a026d844dff51c7fb8bdfa4f12fd72246ab589",
+  "status": "draft",
+  "kind": "bug",
+  "goal": "A stale lease must not remove a live owner's resource",
+  "behavior": "Two contenders never report ownership of the same slot at once",
+  "facts": [
+    "The existing lease file is visible before its JSON write completes"
+  ],
+  "cause": "harness/bin/agent-lease: claim creates a visible empty file before writing the record",
+  "boundaries": [
+    "Edit only agent-lease and focused tests"
+  ],
+  "interfaces": [
+    "Keep the agent-lease command syntax and JSON list output"
+  ],
+  "dependencies": [
+    "Node standard library"
+  ],
+  "criteria": [
+    {
+      "id": 1,
+      "outcome": "A controlled competing claim receives a different slot or waits",
+      "checks": [
+        "race"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "race",
+      "command": "node --test test/agent-lease.test.mjs"
+    }
+  ],
+  "escalation": [
+    "Escalate if compatibility with existing lease files cannot be preserved"
+  ],
+  "decisions": []
+}

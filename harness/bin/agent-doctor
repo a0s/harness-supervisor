@@ -1,0 +1,86 @@
+#!/usr/bin/env node
+// Read-only installation and runtime capability report.
+import { existsSync, lstatSync, readlinkSync, readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { spawnSync } from 'node:child_process'
+
+const repo = resolve(process.argv[2] || process.cwd())
+const harness = resolve(new URL('..', import.meta.url).pathname)
+function command(name) {
+  const found = spawnSync('which', [name], { encoding: 'utf8' })
+  if (found.status !== 0) return { installed: false }
+  const version = spawnSync(name, ['--version'], { encoding: 'utf8', timeout: 5000 })
+  return { installed: true, path: found.stdout.trim(), version: (version.stdout || version.stderr).trim() || 'unknown' }
+}
+function link(path, expected) {
+  try {
+    const stat = lstatSync(path)
+    if (!stat.isSymbolicLink()) return { state: 'occupied', path }
+    const target = readlinkSync(path)
+    return { state: !existsSync(path) ? 'broken' : resolve(path, '..', target) === expected ? 'ok' : 'foreign', path, target }
+  } catch { return { state: 'missing', path } }
+}
+function settings(path) {
+  try {
+    const data = JSON.parse(readFileSync(path, 'utf8'))
+    return { path, model: data.model || null, availableModels: data.availableModels || null }
+  } catch { return null }
+}
+function codexEffort(path) {
+  try {
+    const lines = readFileSync(path, 'utf8').split('\n').filter(line => !line.trim().startsWith('#'))
+    const match = lines.join('\n').match(/^\s*model_reasoning_effort\s*=\s*"([^"]+)"/m)
+    return match ? { path, value: match[1] } : null
+  } catch { return null }
+}
+const expected = [
+  ['.agents/skills/supervisor', '.agents/skills/supervisor'],
+  ['.claude/skills/supervisor', '.agents/skills/supervisor'],
+  ...['agent-lease', 'agent-merge-lock', 'agent-state', 'agent-task', 'agent-verify', 'agent-doctor'].map(name => [`.agents/bin/${name}`, `bin/${name}`]),
+  ...['supervisor-coordinator', 'supervisor-coordinator-high', 'supervisor-implementer', 'supervisor-implementer-high', 'supervisor-scout', 'supervisor-verifier']
+    .map(name => [`.claude/agents/${name}.md`, `.claude/agents/${name}.md`]),
+]
+const links = expected.map(([target, source]) => link(join(repo, target), join(harness, source)))
+const codex = command('codex'), claude = command('claude')
+const depth = process.env.CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH
+const configured = [settings(join(homedir(), '.claude', 'settings.json')), settings(join(repo, '.claude', 'settings.json'))].filter(Boolean)
+const codexConfigured = [codexEffort(join(homedir(), '.codex', 'config.toml')), codexEffort(join(repo, '.codex', 'config.toml'))].filter(Boolean)
+const conflicts = []
+if (process.env.CLAUDE_CODE_SUBAGENT_MODEL) conflicts.push('CLAUDE_CODE_SUBAGENT_MODEL overrides role model routing')
+if (process.env.CLAUDE_CODE_EFFORT_LEVEL) conflicts.push('CLAUDE_CODE_EFFORT_LEVEL overrides role effort routing')
+for (const item of configured) {
+  if (item.availableModels && !JSON.stringify(item.availableModels).includes('sonnet')) conflicts.push(`${item.path}: availableModels may exclude Sonnet`)
+}
+for (const item of codexConfigured) if (item.value !== 'medium') conflicts.push(`${item.path}: Codex effort ${item.value} differs from the cheap execution default`)
+const report = {
+  repository: repo,
+  harness,
+  links,
+  instructions: { agents: existsSync(join(repo, 'AGENTS.md')), claude: existsSync(join(repo, 'CLAUDE.md')) },
+  runtimes: { codex, claude },
+  overrides: {
+    claudeSubagentModel: process.env.CLAUDE_CODE_SUBAGENT_MODEL || null,
+    claudeEffort: process.env.CLAUDE_CODE_EFFORT_LEVEL || null,
+    claudeDepth: depth || null,
+    settings: configured,
+    codexEffort: codexConfigured,
+    conflicts,
+  },
+  capability: {
+    codexDelegation: codex.installed ? 'probe in an active session' : 'unavailable',
+    claudeNestedDelegation: !claude.installed ? 'unavailable' : depth && Number(depth) < 2 ? 'disabled by depth setting' : 'probe at coordinator depth',
+    modelAvailability: 'query the active runtime; CLI presence does not prove model access',
+    instructionLoading: 'probe in a fresh runtime session; file presence is not proof of loading',
+  },
+}
+if (process.argv.includes('--json')) console.log(JSON.stringify(report, null, 2))
+else {
+  console.log(`repository: ${repo}\nharness: ${harness}`)
+  for (const item of links) console.log(`${item.state.padEnd(8)} ${item.path}${item.target ? ` -> ${item.target}` : ''}`)
+  console.log(`Codex: ${codex.version || 'unavailable'}; Claude Code: ${claude.version || 'unavailable'}`)
+  console.log(`AGENTS.md: ${report.instructions.agents}; CLAUDE.md: ${report.instructions.claude}`)
+  console.log(`Claude nested delegation: ${report.capability.claudeNestedDelegation}`)
+  for (const conflict of conflicts) console.log(`model setting conflict: ${conflict}`)
+  console.log('Model access and instruction loading require an active-session probe; no settings were changed.')
+}

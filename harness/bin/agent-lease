@@ -16,10 +16,10 @@
 // the same lease files interoperates, so a repository may vendor its own copy
 // when its tests must run without the harness installed.
 
-import { openSync, writeSync, closeSync, readFileSync, unlinkSync, readdirSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, unlinkSync, readdirSync, mkdirSync, linkSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir, hostname, constants as osConstants } from 'node:os'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import net from 'node:net'
 
@@ -52,7 +52,13 @@ function alive(pid) {
 
 function readLease(file) {
   try {
-    return JSON.parse(readFileSync(join(REGISTRY, file), 'utf8'))
+    const record = JSON.parse(readFileSync(join(REGISTRY, file), 'utf8'))
+    if (!Number.isInteger(record.pid) || record.pid <= 0) return null
+    if (typeof record.id !== 'string') {
+      if (typeof record.since !== 'string') return null
+      record.id = `legacy:${record.pid}:${record.since}`
+    }
+    return record
   } catch {
     return null
   }
@@ -66,42 +72,62 @@ function leaseFiles() {
   }
 }
 
-// Atomic: 'wx' fails when the file exists, so two processes racing for the same
-// port or slot cannot both win. No separate registry lock is needed.
+// Write the whole record before making it visible at the canonical name.
+// Hard-link creation is exclusive on Linux and macOS, including across processes.
 function claim(file, record) {
-  let fd
+  const temp = join(REGISTRY, `.pending-${randomUUID()}`)
+  writeFileSync(temp, JSON.stringify(record, null, 2) + '\n', { flag: 'wx' })
+  if (process.env.AGENT_LEASE_TEST_PAUSE_BEFORE_PUBLISH_MS) {
+    const delay = Number(process.env.AGENT_LEASE_TEST_PAUSE_BEFORE_PUBLISH_MS)
+    if (Number.isInteger(delay) && delay > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay)
+  }
   try {
-    fd = openSync(join(REGISTRY, file), 'wx')
+    linkSync(temp, join(REGISTRY, file))
   } catch (error) {
     if (error.code === 'EEXIST') return false
     throw error
+  } finally {
+    unlinkSync(temp)
   }
-  writeSync(fd, JSON.stringify(record, null, 2) + '\n')
-  closeSync(fd)
   return true
+}
+
+// Only deletion needs a guard. A claim publishes with an exclusive hard link;
+// while a guard is held, no other deleter may unlink a newer generation.
+function withDeleteGuard(file, action) {
+  const guard = join(REGISTRY, `.${file}.delete-guard`)
+  let owned = false
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try {
+      writeFileSync(guard, String(process.pid), { flag: 'wx' })
+      owned = true
+      break
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
+    }
+  }
+  if (!owned) return false // preserve uncertain ownership; manual inspection can clear a stranded guard
+  try { return action() } finally { unlinkSync(guard) }
 }
 
 // A crashed run must not burn its resource forever. A lease whose owner is gone
 // is removed so the next caller can take it.
 function dropIfStale(file) {
-  const record = readLease(file)
-  if (record && alive(record.pid)) return false
-  try {
-    unlinkSync(join(REGISTRY, file))
-  } catch {
-    return false
-  }
-  return true
+  return withDeleteGuard(file, () => {
+    const record = readLease(file)
+    // An unreadable or incomplete record is evidence of uncertainty, not death.
+    if (!record || alive(record.pid)) return false
+    try { unlinkSync(join(REGISTRY, file)); return true } catch { return false }
+  })
 }
 
-function release(file, pid) {
-  const record = readLease(file)
-  if (record && record.pid !== pid) return
-  try {
-    unlinkSync(join(REGISTRY, file))
-  } catch {
-    /* already gone */
-  }
+function release(file, id) {
+  withDeleteGuard(file, () => {
+    const record = readLease(file)
+    if (!record || record.id !== id) return false
+    try { unlinkSync(join(REGISTRY, file)); return true } catch { return false }
+  })
 }
 
 function bindOnce(port, host) {
@@ -136,6 +162,7 @@ function held() {
 
 function describe(options, command) {
   return {
+    id: randomUUID(),
     pid: process.pid,
     host: hostname(),
     label: options.label || '',
@@ -164,12 +191,13 @@ async function acquirePort(options, command) {
     for (let attempt = 0; attempt < size; attempt += 1) {
       const port = from + ((start + attempt) % size)
       const file = `port-${port}.json`
-      let mine = claim(file, describe(options, command))
-      if (!mine && dropIfStale(file)) mine = claim(file, describe(options, command))
+      const record = describe(options, command)
+      let mine = claim(file, record)
+      if (!mine && dropIfStale(file)) mine = claim(file, record)
       if (!mine) continue
-      if (await bindable(port)) return { port, file }
+      if (await bindable(port)) return { port, file, id: record.id }
       // Leased by us but physically occupied by an unrelated process: give it back.
-      release(file, process.pid)
+      release(file, record.id)
     }
     if (Date.now() >= deadline) {
       die(`every port in ${from}-${to} is leased or occupied; run "agent-lease list" to see who holds them`, 75)
@@ -193,8 +221,9 @@ async function acquireHold(name, options, command) {
   for (;;) {
     for (let slot = 0; slot < slots; slot += 1) {
       const file = `hold-${name}--${slot}.json`
-      if (claim(file, describe(options, command))) return { file }
-      if (dropIfStale(file) && claim(file, describe(options, command))) return { file }
+      const record = describe(options, command)
+      if (claim(file, record)) return { file, id: record.id }
+      if (dropIfStale(file) && claim(file, record)) return { file, id: record.id }
     }
     if (Date.now() >= deadline) {
       die(`"${name}" is busy and did not free up within ${waitFor}s; run "agent-lease list"`, 75)
@@ -222,7 +251,7 @@ function runChild(command, extraEnv, files) {
   const releaseAll = () => {
     if (released) return
     released = true
-    for (const file of files) release(file, process.pid)
+    for (const lease of files) release(lease.file, lease.id)
   }
   process.on('exit', releaseAll)
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
@@ -288,11 +317,12 @@ function commandReap() {
   let removed = 0
   for (const file of leaseFiles()) {
     const record = readLease(file)
-    if (record && alive(record.pid)) continue
+    if (!record || alive(record.pid)) continue
     try {
-      unlinkSync(join(REGISTRY, file))
-      removed += 1
-      process.stdout.write(`released ${file.replace(/\.json$/, '')}\n`)
+      if (dropIfStale(file)) {
+        removed += 1
+        process.stdout.write(`released ${file.replace(/\.json$/, '')}\n`)
+      }
     } catch {
       /* raced with another reaper */
     }
@@ -365,11 +395,11 @@ async function main() {
 
   if (verb === 'port') {
     const { options } = parseFlags(flags, 0)
-    const { port, file } = await acquirePort(options, command)
+    const { port, file, id } = await acquirePort(options, command)
     const names = ['AGENT_LEASE_PORT', ...String(options.env || '').split(',').filter(Boolean)]
     const env = Object.fromEntries(names.map((name) => [name, String(port)]))
     env.AGENT_LEASE_HELD = [...held(), `port:${port}`].join(',')
-    runChild(command, env, [file])
+    runChild(command, env, [{ file, id }])
     return
   }
 
@@ -382,8 +412,8 @@ async function main() {
       runChild(command, {}, [])
       return
     }
-    const { file } = await acquireHold(name, options, command)
-    runChild(command, { AGENT_LEASE_HELD: [...held(), name].join(',') }, [file])
+    const { file, id } = await acquireHold(name, options, command)
+    runChild(command, { AGENT_LEASE_HELD: [...held(), name].join(',') }, [{ file, id }])
     return
   }
 

@@ -33,12 +33,12 @@ exclusive.
 ```text
 outside the lock, in my own worktree:
     git merge master            # bring the integration tip in
-    resolve conflicts, run the required checks
+    resolve conflicts, commit, then run agent-verify record for required checks
     git ls-files .agents/state  # must print NOTHING, state never lands
     git rev-parse master        # remember this as the base
 
 under the lock, seconds:
-    agent-merge-lock land --branch <mine> --base <that sha>
+    agent-merge-lock land --branch <mine> --base <that sha> --evidence <file> --task-id <id> --task-revision <rev>
 ```
 
 The `.agents/state/` check is there because it has already gone wrong once: a
@@ -57,7 +57,9 @@ that. What was in those files and must outlive the run goes to the project
 trace, or to the next block's worktree with `agent-state handover <topic>
 <worktree>` (`reference/state-layout.md`, "Three lifetimes").
 
-`land` takes the lock, refuses if the integration branch moved past `--base`,
+Record checks with `agent-verify` before taking the lock. Its evidence binds
+source SHA/tree, base SHA, task revision, commands, results, and output paths.
+`land` takes the lock, rejects absent, failed, or stale evidence, refuses if the integration branch moved past `--base`,
 refuses if the tip was never merged into the branch (that means the tested tree
 is not the tree that would land), merges `--no-ff`, and releases. A landing that
 cannot proceed gives the lock back by default, because whatever needs fixing is
@@ -69,7 +71,8 @@ being prevented.
 ```sh
 agent-merge-lock status                     # first command after any interruption
 agent-merge-lock acquire --wait 540         # take a turn, or exit 75 keeping the queue place
-agent-merge-lock land --branch NAME --base SHA [--verify CMD]
+agent-verify record --base TARGET --task-id ID --task-revision REV --check 'COMMAND'
+agent-merge-lock land --branch NAME --base SHA --evidence FILE --task-id ID --task-revision REV
 agent-merge-lock release                    # always, when done or when giving up
 agent-merge-lock queue                      # who holds it, who is waiting
 ```

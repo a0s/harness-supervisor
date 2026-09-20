@@ -1,0 +1,77 @@
+#!/usr/bin/env node
+// Record checks on an exact branch/base pair before acquiring the merge lock.
+import { spawnSync } from 'node:child_process'
+import { readFileSync, writeFileSync, mkdirSync, renameSync, existsSync, readdirSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
+
+function die(message, code = 64) { console.error(`agent-verify: ${message}`); process.exit(code) }
+function git(...args) {
+  const result = spawnSync('git', args, { encoding: 'utf8' })
+  if (result.status !== 0) die(result.stderr.trim() || `git ${args.join(' ')} failed`, 70)
+  return result.stdout.trim()
+}
+function flags(argv) {
+  const opts = { checks: [] }
+  for (let i = 0; i < argv.length; i++) {
+    const key = argv[i]
+    if (!['--base', '--task-id', '--task-revision', '--check', '--evidence', '--reason'].includes(key) || !argv[i + 1]) die(`invalid option ${key}`)
+    if (key === '--check') opts.checks.push(argv[++i])
+    else opts[key.slice(2)] = argv[++i]
+  }
+  return opts
+}
+function snapshot(base) {
+  return { sourceSha: git('rev-parse', 'HEAD'), sourceTree: git('rev-parse', 'HEAD^{tree}'), baseSha: git('rev-parse', `${base}^{commit}`) }
+}
+function valid(record, base, taskRevision) {
+  const current = snapshot(base)
+  return record.sourceSha === current.sourceSha && record.sourceTree === current.sourceTree && record.baseSha === current.baseSha &&
+    (!taskRevision || record.taskRevision === taskRevision) && Array.isArray(record.checks) && record.checks.length > 0 &&
+    record.checks.every(check => check.exitCode === 0 && existsSync(check.output))
+}
+const [verb, ...args] = process.argv.slice(2)
+if (!['record', 'check'].includes(verb)) die('usage: agent-verify record --base REF --task-id ID --task-revision REV --check CMD ... | check --base REF --evidence FILE [--task-revision REV]')
+const opts = flags(args)
+if (!opts.base) die('--base is required')
+if (verb === 'record') {
+  if (!opts['task-id'] || !opts['task-revision'] || !opts.checks.length) die('record needs task ID, task revision, and at least one check')
+  if (git('status', '--porcelain')) die('commit source changes before recording checks', 66)
+  const before = snapshot(opts.base)
+  const dir = join(git('rev-parse', '--path-format=absolute', '--git-common-dir'), 'agent-verification')
+  mkdirSync(dir, { recursive: true })
+  if (!opts.reason) {
+    for (const name of readdirSync(dir).filter(name => name.endsWith('.json'))) {
+      try {
+        const file = join(dir, name), old = JSON.parse(readFileSync(file, 'utf8'))
+        if (old.taskId === opts['task-id'] && old.taskRevision === opts['task-revision'] &&
+          old.sourceSha === before.sourceSha && old.sourceTree === before.sourceTree && old.baseSha === before.baseSha &&
+          JSON.stringify(old.checks.map(check => check.command)) === JSON.stringify(opts.checks) && valid(old, opts.base, opts['task-revision'])) {
+          console.log(`REUSED evidence=${file} checks=${old.checks.length}`)
+          process.exit(0)
+        }
+      } catch { /* another or incomplete evidence record */ }
+    }
+  }
+  const id = randomUUID()
+  const checks = opts.checks.map((command, index) => {
+    const result = spawnSync(command, { shell: true, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 })
+    const output = join(dir, `${id}-${index}.log`)
+    writeFileSync(output, `${result.stdout || ''}${result.stderr || ''}`)
+    return { command, exitCode: result.status ?? 127, output }
+  })
+  const record = { version: 1, id, taskId: opts['task-id'], taskRevision: opts['task-revision'], baseRef: opts.base, ...before, checks, reason: opts.reason || null, created: new Date().toISOString() }
+  const file = join(dir, `${id}.json`)
+  const temp = `${file}.tmp`
+  writeFileSync(temp, JSON.stringify(record, null, 2) + '\n')
+  renameSync(temp, file)
+  if (JSON.stringify(snapshot(opts.base)) !== JSON.stringify(before)) die(`source or base moved during checks; stale evidence=${file}`, 65)
+  console.log(`${checks.every(c => c.exitCode === 0) ? 'VERIFIED' : 'FAILED'} evidence=${file} checks=${checks.length}`)
+  if (checks.some(c => c.exitCode !== 0)) process.exitCode = 1
+} else {
+  if (!opts.evidence) die('check needs --evidence')
+  let record
+  try { record = JSON.parse(readFileSync(resolve(opts.evidence), 'utf8')) } catch (error) { die(error.message, 66) }
+  if (!valid(record, opts.base, opts['task-revision'])) die('evidence is failed or stale for source/base/task revision', 65)
+  console.log(`VERIFIED evidence=${resolve(opts.evidence)} task=${record.taskId} revision=${record.taskRevision}`)
+}

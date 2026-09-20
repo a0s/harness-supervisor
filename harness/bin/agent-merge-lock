@@ -18,7 +18,7 @@
 //   agent-merge-lock status  [--json]
 //   agent-merge-lock renew
 //   agent-merge-lock release [--force]
-//   agent-merge-lock land --branch NAME [--into master] [--base SHA] [--verify CMD]
+//   agent-merge-lock land --branch NAME --base SHA --evidence FILE --task-id ID --task-revision REV
 //   agent-merge-lock queue
 //   agent-merge-lock break --reason TEXT
 //
@@ -32,7 +32,7 @@
 // that means the same thing, so an agent can branch on either.
 
 import { spawnSync } from 'node:child_process'
-import { openSync, writeSync, closeSync, readFileSync, writeFileSync, appendFileSync, unlinkSync, readdirSync, mkdirSync, rmSync } from 'node:fs'
+import { openSync, writeSync, closeSync, readFileSync, writeFileSync, appendFileSync, unlinkSync, readdirSync, mkdirSync, rmSync, existsSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import { hostname } from 'node:os'
 
@@ -150,6 +150,18 @@ function midMerge(cwd) {
 function shaOf(ref) {
   const result = git(['rev-parse', '--verify', `${ref}^{commit}`], { allowFail: true })
   return result.status === 0 ? result.out : null
+}
+
+function evidenceFor(path, branch, baseSha, taskId, taskRevision) {
+  if (!path) return false
+  try {
+    const record = JSON.parse(readFileSync(path, 'utf8'))
+    const tree = git(['rev-parse', `${branch}^{tree}`]).out
+    return record.version === 1 && record.sourceSha === shaOf(branch) && record.sourceTree === tree &&
+      record.baseSha === baseSha && record.taskId === taskId && record.taskRevision === taskRevision &&
+      Array.isArray(record.checks) && record.checks.length > 0 &&
+      record.checks.every(check => check.exitCode === 0 && existsSync(check.output))
+  } catch { return false }
 }
 
 // ---------------------------------------------------------------- lock files
@@ -521,6 +533,11 @@ async function commandLand(repo, target, options) {
   if (branch === target) die(`--branch and --into are both ${target}; nothing to land`)
   if (!shaOf(branch)) die(`no such branch: ${branch}`)
   if (!shaOf(target)) die(`no such branch: ${target}`)
+  if (options.verify !== undefined) die('--verify runs checks under the lock; record them first with agent-verify and pass --evidence')
+  if (!options.evidence || !options['task-id'] || !options['task-revision']) die('land needs --evidence, --task-id, and --task-revision')
+  if (!evidenceFor(options.evidence, branch, shaOf(target), options['task-id'], options['task-revision'])) {
+    die('missing, failed, or stale verification evidence; run agent-verify record outside the lock', EXIT.conflict)
+  }
 
   const ownDirty = dirtyFiles(repo.worktree)
   if (ownDirty.length && options['allow-dirty'] === undefined) {
@@ -532,6 +549,10 @@ async function commandLand(repo, target, options) {
   const { dir, identity } = await commandAcquire(repo, target, { ...options, branch }, { quiet: true })
   const holder = readHolder(dir)
   const targetSha = shaOf(target)
+  if (!evidenceFor(options.evidence, branch, targetSha, options['task-id'], options['task-revision'])) {
+    bail(dir, identity, options, ['Verification evidence became stale before landing. Re-run checks outside the lock.'],
+      `STALE_EVIDENCE target=${target} branch=${branch}`, EXIT.conflict)
+  }
 
   if (options.base && options.base !== targetSha) {
     const moved = git(['log', '--oneline', `${options.base}..${target}`], { allowFail: true }).out
@@ -598,25 +619,6 @@ async function commandLand(repo, target, options) {
 
   const foreign = Boolean(checkout) && checkout.path !== repo.worktree
   const foreignDirtyBefore = foreign ? dirtyFiles(workdir) : []
-
-  if (options.verify) {
-    // Run the check here, in the caller's own worktree, and not after the merge
-    // in the target checkout: with the base unmoved, the merge result has the
-    // same tree as this branch, and the target checkout may hold another
-    // session's uncommitted work, which would be what the check actually tested.
-    say(`Verifying in ${repo.worktree}: ${options.verify}`)
-    const check = spawnSync(options.verify, { cwd: repo.worktree, shell: true, stdio: 'inherit' })
-    if (check.status !== 0) {
-      bail(
-        dir,
-        identity,
-        options,
-        [`The check failed, so nothing was merged and ${target} is untouched.`],
-        `VERIFY_FAILED target=${target} branch=${branch} exit=${check.status}`,
-        EXIT.conflict,
-      )
-    }
-  }
 
   const preSha = shaOf(target)
   const message = options.message || `Merge ${branch} into ${target}`
@@ -734,7 +736,7 @@ const USAGE = `agent-merge-lock: take turns landing work on a project's integrat
       HELD_BY_OTHER, QUEUED or FREE. This is the first command to run after any
       interruption, before touching git at all.
 
-  agent-merge-lock land --branch NAME [--into master] [--base SHA] [--verify CMD]
+  agent-merge-lock land --branch NAME --base SHA --evidence FILE --task-id ID --task-revision REV
       Take the lock, refuse if the integration branch moved past --base, merge
       --no-ff, and release. Add --keep-lock to keep it, --message to set the
       merge subject.

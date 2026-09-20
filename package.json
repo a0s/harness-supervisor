@@ -1,0 +1,10 @@
+{
+  "name": "harness-supervisor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check harness/bin/agent-state && node --check harness/bin/agent-lease && node --check harness/bin/agent-merge-lock && node --check harness/bin/agent-task && node --check harness/bin/agent-verify && node --check harness/bin/agent-doctor && sh -n link.sh"
+  },
+  "engines": { "node": ">=20" }
+}

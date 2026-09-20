@@ -1,0 +1,83 @@
+#!/usr/bin/env node
+// A shared task contract for Codex and Claude Code. No runtime-specific fields.
+import { readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+
+function fail(message) { console.error(`agent-task: ${message}`); process.exitCode = 1 }
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical)
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(k => [k, canonical(value[k])]))
+  return value
+}
+function revision(task) {
+  const { revision, plannerReview, ...content } = task
+  return createHash('sha256').update(JSON.stringify(canonical(content))).digest('hex')
+}
+const nonempty = value => typeof value === 'string' && value.trim().length > 0
+const list = value => Array.isArray(value) && value.length > 0
+
+function validate(task) {
+  const errors = []
+  const need = (condition, message) => { if (!condition) errors.push(message) }
+  need(task && typeof task === 'object' && !Array.isArray(task), 'root must be an object')
+  if (!task || typeof task !== 'object') return errors
+  for (const key of ['id', 'planRevision', 'goal', 'behavior']) need(nonempty(task[key]), `${key} is required`)
+  need(['bug', 'feature', 'research'].includes(task.kind), 'kind must be bug, feature, or research')
+  need(['draft', 'ready'].includes(task.status), 'status must be draft or ready')
+  for (const key of ['facts', 'boundaries', 'interfaces', 'dependencies', 'escalation']) need(list(task[key]) && task[key].every(nonempty), `${key} needs nonempty entries; use "none" when applicable`)
+  if (task.kind === 'bug') need(nonempty(task.cause), 'diagnosed bug requires cause')
+  need(list(task.criteria), 'criteria must be nonempty')
+  need(list(task.checks), 'checks must be nonempty')
+  const checks = new Set()
+  for (const check of task.checks || []) {
+    need(nonempty(check.id) && nonempty(check.command), 'each check needs id and command')
+    if (checks.has(check.id)) errors.push(`duplicate check ${check.id}`)
+    checks.add(check.id)
+  }
+  const criteria = new Set()
+  for (const criterion of task.criteria || []) {
+    need(/^\d+$/.test(String(criterion.id)) && nonempty(criterion.outcome), 'each criterion needs a numbered id and observable outcome')
+    if (criteria.has(String(criterion.id))) errors.push(`duplicate criterion ${criterion.id}`)
+    criteria.add(String(criterion.id))
+    need(list(criterion.checks) && criterion.checks.every(id => checks.has(id)), `criterion ${criterion.id} must reference existing checks`)
+  }
+  need(Array.isArray(task.decisions), 'decisions must be an array')
+  for (const decision of task.decisions || []) need(nonempty(decision.id) && ['open', 'resolved'].includes(decision.status) && nonempty(decision.summary), 'each decision needs id, status, and summary')
+  const digest = revision(task)
+  need(task.revision === digest, `revision mismatch; expected ${digest}`)
+  if (task.status === 'ready') {
+    need(!(task.decisions || []).some(d => d.status === 'open'), 'ready task has an open architecture decision')
+    need(task.plannerReview?.approvedRevision === digest && nonempty(task.plannerReview?.reviewer) && nonempty(task.plannerReview?.assessment), 'ready requires planner semantic review for this revision')
+  }
+  return errors
+}
+
+const [action, file, reviewer, ...assessmentWords] = process.argv.slice(2)
+if (!['stamp', 'ready', 'validate'].includes(action) || !file) { console.error('usage: agent-task stamp|validate TASK.json | ready TASK.json REVIEWER ASSESSMENT'); process.exit(64) }
+let task
+try { task = JSON.parse(readFileSync(file, 'utf8')) } catch (error) { console.error(`agent-task: ${error.message}`); process.exit(66) }
+if (action === 'stamp') {
+  task.revision = revision(task)
+  task.status = 'draft'
+  delete task.plannerReview
+  // Status participates in the digest, so stamp again after changing it.
+  task.revision = revision(task)
+  writeFileSync(file, JSON.stringify(task, null, 2) + '\n')
+  console.log(`draft revision=${task.revision}`)
+} else if (action === 'ready') {
+  const errors = validate(task)
+  if (errors.length) { errors.forEach(fail); process.exit(1) }
+  if (task.status !== 'draft' || !nonempty(reviewer) || !nonempty(assessmentWords.join(' '))) fail('ready needs a valid draft, reviewer, and substantive assessment')
+  else if (task.decisions.some(d => d.status === 'open')) fail('resolve architecture decisions before ready')
+  else {
+    task.status = 'ready'
+    task.revision = revision(task)
+    task.plannerReview = { reviewer, assessment: assessmentWords.join(' '), approvedRevision: task.revision }
+    writeFileSync(file, JSON.stringify(task, null, 2) + '\n')
+    console.log(`READY id=${task.id} revision=${task.revision}`)
+  }
+} else {
+  const errors = validate(task)
+  if (errors.length) errors.forEach(fail)
+  else console.log(`VALID id=${task.id} revision=${task.revision} status=${task.status}`)
+}

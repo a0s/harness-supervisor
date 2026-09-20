@@ -1,0 +1,40 @@
+{
+  "id": "example-feature",
+  "planRevision": "a34bf777c38b624b7bf624651338eb4e431dde0d",
+  "revision": "2db269c034365d91ddf8a1bcf4f9004409c0743e5e2c4914cd0ea8f3e54997e4",
+  "status": "draft",
+  "kind": "feature",
+  "goal": "Show blocked work packages in the recovery summary",
+  "behavior": "The summary includes the blocked count and its reason",
+  "facts": [
+    "Legacy wp files encode status as a text field"
+  ],
+  "boundaries": [
+    "Keep legacy WP parsing"
+  ],
+  "interfaces": [
+    "agent-state list --json preserves existing fields"
+  ],
+  "dependencies": [
+    "No external packages"
+  ],
+  "criteria": [
+    {
+      "id": 1,
+      "outcome": "A legacy blocked WP appears in JSON and text summaries",
+      "checks": [
+        "state-test"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "state-test",
+      "command": "node --test test/agent-state.test.mjs"
+    }
+  ],
+  "escalation": [
+    "Escalate if the status vocabulary needs a breaking change"
+  ],
+  "decisions": []
+}

@@ -1,7 +1,7 @@
 # Continuity: resume and rotation
 
 Read this after interruption, on a bare continuation while unfinished state
-exists, or near 45% context. Read `runtime.md` first because liveness and stop
+exists, or when an actual context limit requires rotation. Read `runtime.md` first because liveness and stop
 operations are runtime-specific.
 
 ## Root resume sweep
@@ -33,7 +33,7 @@ operations are runtime-specific.
 3. Find unfinished work without preloading every topic:
 
    ```sh
-   grep -l 'status: *\(in-progress\|needs-restart\)' .agents/state/*/wp-*.md
+   rg -l 'status: *(in-progress|needs-restart|blocked)' .agents/state/*/wp-*.md
    ```
 
    The links make this one grep cover every worktree. Read only matches, their
@@ -120,9 +120,9 @@ all.
 | Owner provably live | Message it to flush WP state, then continue it |
 | Owner unreachable; WP current | Relaunch the current runtime's matching role from persisted brief plus resume delta |
 | WP stale or missing | Reconstruct from `git status`, `git diff`, test artifacts, and reachable task output; write WP state; then relaunch |
-| Ledger reported and WPs done | Do not redo; independently rerun required integration checks |
+| Ledger reported and WPs verified or landed | Check evidence freshness; do not rerun unchanged checks without a reason |
 
-The resume delta names owned WP files first, freezes `done` WPs, starts each
+The resume delta names owned WP files first, freezes `landed` WPs, starts each
 unfinished WP at `next-action`, warns that a dirty tree is expected, restates
 scope fences, and names the current runtime role. It does not reproduce the old
 conversation.
@@ -138,11 +138,11 @@ spawn-depth cap rejects nesting, checkpoint once and flatten the wave: root
 spawns implementers/verifiers and performs integration review. Do not retry a
 known depth failure.
 
-## Rotate near 45% context
+## Rotate when context capacity is actually constrained
 
-Context percentage can be exact or a conservative estimate from a long run,
-large outputs, and repeated review cycles. Rotation preserves a role; it is not
-an escalation.
+Use runtime-reported capacity or observed inability to retain the task and
+checkpoint. Do not invent a percentage from conversation length. Rotation
+preserves a role; it is not an escalation.
 
 1. Ask the agent to stop starting work and rewrite its WP with `last-good`,
    concrete `next-action`, `files`, `traps`, and real `verified` output.
@@ -152,6 +152,5 @@ an escalation.
 4. Relaunch the same role/model/effort from the persisted brief and WP file.
 5. Update the root ledger with old and new runtime ids.
 
-The supervisor rotates its children; root rotates supervisors; every agent asks
-for rotation when it approaches the threshold. Root also flushes its plan and
+The supervisor rotates its children; root rotates supervisors. Root also flushes its plan and
 ledger before handing the session to a fresh root context.

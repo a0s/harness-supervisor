@@ -1,0 +1,4 @@
+.agents/state/
+pilot/results/*/work/
+pilot/results/*/evaluation/
+pilot/interrupted/

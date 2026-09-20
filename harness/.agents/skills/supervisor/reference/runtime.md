@@ -25,8 +25,8 @@ same capability or token use as `medium` on GPT. Treat the tables as separate.
 
 | Role | Default | Escalate when |
 |---|---|---|
-| Root | Session model; expected `gpt-5.6-sol` | Root effort is chosen when the session starts; use higher effort for difficult diagnosis/design |
-| Supervisor | `gpt-5.6-sol`, `low` | `medium` for ambiguous integration, contradictory evidence, or a failed WP |
+| Planner | Session model; use `gpt-5.6-sol` for architecture or contradictory requirements | Finish a ready task, then checkpoint |
+| Execution root / coordinator | `gpt-5.6-terra`, `medium` | Escalate only for an unresolved defect or contradiction |
 | Implementer | `gpt-5.6-terra`, `medium` | `low` only for exact mechanical edits; `high` for high-risk or failed work |
 | Verifier/test author | `gpt-5.6-terra`, `high` | A separate verifier already means the risk gate fired; do not lower without eval evidence |
 | Scout | `gpt-5.6-luna`, `low` | Escalate only when the task stopped being mechanical |
@@ -45,8 +45,8 @@ not an escalation.
 
 | Role | Default | Escalate when |
 |---|---|---|
-| Root | Session model; expected `opus` at `high` | `xhigh` for the hardest architecture, debugging, or long-horizon reasoning; `fable` only by explicit quality-first choice |
-| Supervisor | `opus`, `medium` | Use `supervisor-coordinator-high` (`opus`, `high`) for ambiguous integration, contradictory evidence, or a failed WP |
+| Planner | Session model; use `opus` for architecture or contradictory requirements | Finish a ready task, then checkpoint |
+| Execution root / coordinator | `sonnet`, `medium` | Escalate only for an unresolved defect or contradiction |
 | Implementer | `sonnet`, `medium` | Use `supervisor-implementer-high` (`sonnet`, `high`) for high-risk or failed work |
 | Verifier/test author | `sonnet`, `high` | `xhigh` only after a measured miss; the default verifier already receives high effort |
 | Scout | `haiku`, no effort field | Haiku 4.5 does not support the current effort control; escalate to Sonnet only if judgment is required |
@@ -60,8 +60,8 @@ Use the installed role definitions under `.claude/agents/`:
 
 | Role | Agent type |
 |---|---|
-| Supervisor | `supervisor-coordinator` |
-| Escalated supervisor | `supervisor-coordinator-high` |
+| Coordinator | `supervisor-coordinator` (`sonnet`) |
+| Escalated coordinator | `supervisor-coordinator-high` (`opus`) |
 | Implementer | `supervisor-implementer` |
 | Escalated implementer | `supervisor-implementer-high` |
 | Verifier/test author | `supervisor-verifier` |

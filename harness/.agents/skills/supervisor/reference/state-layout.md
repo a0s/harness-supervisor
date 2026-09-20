@@ -1,197 +1,69 @@
-# State layout
+# Durable backlog and local run state
 
-Read this when writing a plan, WP status, agent ledger, persisted brief, or
-decision record.
-
-## Three lifetimes
+Read this when writing a task, work package, brief, ledger, or checkpoint.
 
 | Lifetime | Store | Contents |
 |---|---|---|
-| Project | `WORKLOG.md` or the repository's equivalent | Goal, durable status, dated log, decisions, key coordinates |
-| One run | `.agents/state/<topic>/` | Batch plan, per-WP status, agent ledger, exact spawn briefs |
-| Many runs — a **roadmap** | `.agents/state/<topic>/ROADMAP.md`, owned by the worktree working the current block | Goal, the owner's standing rulings, the blocks NOT yet done, constraints that still bite |
+| Across runs | A repository-tracked plan or issue tracker | Goal, accepted decisions, task IDs, status, outstanding work |
+| One run | Ignored `.agents/state/<topic>/` | Task reference, WPs, agent ledger, exact briefs, recovery facts |
+| Verification | Shared Git directory `agent-verification/` | Evidence JSON and full check output for one source/base/task revision |
 
-Run state is recovery scaffolding. Delete a finished topic after its durable
-result has reached the project log; an empty `.agents/state/` is normal. Do not
-invent generic goal/current-state/context-summary files when the repository
-already defines a project trace.
+A task in local state references its Git backlog ID and plan revision and the
+exact ready task revision. Changing any of them invalidates old verification.
+Never leave future work only in a worktree that may be removed. Commit backlog
+updates with the code or as a separate durable plan change. Do not commit
+`.agents/state/`; add it to `.gitignore` and untrack any inherited tracked copy.
 
-A roadmap is the third case and the one that gets lost, because it looks like run
-state and outlives every run that touches it: work planned as N blocks, one
-worktree per block, weeks apart. It gets its own filename for that reason:
-`TODO.md` is one run's intent and does not change once written, `ROADMAP.md` is
-the plan across runs and is rewritten constantly. One file cannot be both, and a
-topic that is a block of a larger plan holds both. Four rules keep it honest.
-
-**It only holds what exists nowhere else.** Goal, the owner's rulings and
-decisions that are not yet code, the blocks still to do, and the traps that still
-bite. What a finished block learned is not repeated: what shipped is a line in the
-project log, a measured difference is an entry wherever the repository records
-those, a recovered law is a comment beside the code implementing it. So a roadmap
-SHRINKS as the work lands. One that grows is duplicating a record that already
-exists somewhere it will be read.
-
-**Emptying it is part of landing a block, not a later tidy.** The block that
-lands moves its own findings out and deletes its section in the same commit.
-Left for later, the deletion never happens and the file becomes a second,
-drifting history.
-
-**One owner, always the worktree working the current block.** Publish it with
-`agent-state link` from there. Landing a block hands it on in one command:
-
-```sh
-agent-state handover <topic> <next-worktree> [--rename <next-topic>]
-```
-
-which moves the directory, publishes it from its new home and drops the old link,
-or refuses and changes nothing. Do it while landing, not afterwards: the roadmap
-lives in a worktree that is about to be removed and git is not holding a copy, so
-"later" is how the plan is lost. If nothing is left to do, delete it instead. A
-roadmap with no worktree is nobody's, and the next reader cannot tell whether it
-is live or abandoned.
-
-**It never enters version control.** This is the rule the other three depend on
-and the one a repository has to enforce, because git cannot see the harness:
-with the topic directory tracked, landing a branch carries it into the
-integration branch through an ordinary merge, straight past "the main checkout
-holds only links".
-Gitignore `.agents/state/`; if it was tracked before, `git rm -r --cached
-.agents/state` once, because an ignore rule never untracks what the index
-already holds. `agent-state` says the same when it finds tracked state, and the
-landing sequence checks. The cost of this rule is that git is no longer a backup
-of the plan — which is precisely why handing over belongs to landing a block
-rather than to a later tidy.
-
-## Topic directory
+## Topic layout
 
 ```text
 .agents/state/<topic>/
-  TODO.md                 immutable intent and WP list for this run
-  ROADMAP.md              the plan across runs, when this topic is one block of it
-  AGENTS.md               root-owned agent ledger
-  BRIEF_supervisor-1.md   exact persisted spawn brief
-  wp-3.md                 mutable truth for one WP
+  TODO.md                 run scope and task ID / plan revision / task revision
+  AGENTS.md               agent ledger and ownership
+  BRIEF_<agent>.md         exact launch brief
+  wp-1.md                 mutable work package checkpoint
 ```
 
-Use one writer per WP file and never let agents sharing a file edit in parallel.
-The plan says what should happen; the WP file says what has happened.
-
-## State in a worktree stays visible from the main checkout
-
-A topic worked in a worktree keeps its state inside that worktree, next to the
-work it describes. That is right for recovery and invisible to the owner, who
-would otherwise have to walk every worktree to learn what is in flight. So the
-worktree publishes it, immediately after creating the topic directory:
-
-```sh
-.agents/bin/agent-state link          # from inside the worktree
-.agents/bin/agent-state list          # every topic in the project, one screen
-```
-
-`link` puts a symlink named `<topic>@<worktree>` in the main checkout's own
-`.agents/state/`, pointing at the real directory. The owner browses one place
-and still opens the true files; nothing is copied, so there is no second version
-to drift. Links are named with `@`, which no real topic uses, and the tool adds
-one rule to the repository's local `info/exclude`, so `git add -A` can never
-stage one.
-
-Remove the link when the topic closes or the worktree is torn down: run
-`agent-state unlink` in that worktree, or `agent-state prune` from anywhere to
-drop links whose target is gone. A link pointing at a deleted worktree is the
-same misinformation as a stale WP file.
-
-## WP status
-
-Rewrite the whole `wp-N.md` after each material transition and before handoff:
+Write a WP after a material transition and before handing off. One agent owns
+one WP file. A useful checkpoint has:
 
 ```text
-# WP-3: scroll position preservation
-status:      in-progress | done | blocked | needs-restart
-owner:       supervisor-1 <agent-id> / implementer <agent-id>
-last-good:   work actually finished and verified
-next-action: one concrete action a fresh agent can execute
-files:       touched paths in the inherited dirty tree
-worktree:    absolute path + branch, when this WP owns one
-landing:     not-started | prepared base=<sha> | lock-held | landed <sha>
-traps:       failed approaches or current blocker
-verified:    commands and real output, including counts/status
-updated:     <ISO timestamp>
+# WP-1: task title
+status:      in-progress | blocked | needs-restart | verified | landed
+backlog:     task ID and Git plan revision
+revision:    ready task revision
+owner:       runtime, role, agent ID
+last-good:   work actually completed
+next-action: one concrete next action while unfinished
+files:       changed paths
+worktree:    absolute path and branch, if any
+landing:     not-started | prepared base=<sha> | landed <sha>
+traps:       blocker or failed approach
+verified:    evidence path, source SHA/tree, base SHA, commands and results
+updated:     ISO timestamp
 ```
 
-Rules:
+`verified` means checks succeeded for the exact task and Git revisions. It does
+not mean integration occurred. `landed` requires the merge result. A `blocked`
+WP includes its reason in `traps`; `agent-state list` shows blocked counts and
+reasons. The older `done` value is still parsed for recovery, but is not proof
+of verification or landing. Never carry an evidence path to a revised task as
+if it remained current; run `agent-verify check` and record new evidence.
 
-- Keep `next-action` non-empty while work is in progress.
-- Require real output in `verified` before `done`.
-- Put a reason in `traps` before `blocked`.
-- Move `landing` on every transition, and never call a WP `done` while its
-  `landing` says `lock-held`: a lock nobody releases stops every other agent.
-- Update on changed code, completed checks, failed attempts that constrain the
-  next step, handoff, rotation, or blocker. Do not journal scout chatter.
-- Read one WP during routine work; grep all WPs only during a resume sweep.
+The agent ledger records role, runtime, requested and effective model/effort,
+owned WPs, exact brief, agent ID, worktree, last seen time, and lifecycle state.
+Append a new identity on restart instead of erasing the old one.
 
-## Root-owned agent ledger
+## Visibility and legacy migration
 
-Persist the brief before spawning. Append a ledger row; never erase history:
+A worktree publishes a topic with `agent-state link`; its symlink appears in the
+main checkout. `agent-state list` also finds unlinked topics. Unlink before
+tearing down a worktree; prune links whose targets disappeared.
 
-```text
-| supervisor-1 | WP-1,WP-2 | runtime: codex | role: supervisor |
-  requested: gpt-5.6-sol/low | effective: gpt-5.6-sol/low |
-  brief: BRIEF_supervisor-1.md | agent: <id> | spawned | last-seen: <ISO> |
-```
-
-Use one physical Markdown table row in the real file. Record:
-
-- owned WPs and persisted brief;
-- runtime and role/agent type;
-- requested model and effort;
-- effective model/effort or a known environment override;
-- runtime task/agent id, lifecycle state, and last-seen time;
-- the worktree path and branch when the agent owns one, so a resume never has
-  to guess which tree belongs to which WP.
-
-Lifecycle is `spawned | reported | resumed | rotated | dead`. Append a new row
-or transition entry when identity changes. IDs are runtime-local: never pass a
-Claude agent id to Codex or a Codex task name to Claude.
-
-## Decisions and progress
-
-Record only decisions whose rejected alternatives matter:
-
-```markdown
-## {date}: {short decision title}
-- **Context:** {why it arose}
-- **Decision:** {what was chosen}
-- **Result:** {outcome and what was rejected, with reason}
-```
-
-Append; do not rewrite history. Strike a cancelled plan item with its reason.
-Use one dated project-log line per shipped milestone. Follow the repository's
-own log rules when they are more specific.
-
-## Commits
-
-Nothing under `.agents/state/` is committed. It is scaffolding for a run in
-progress, not history, and a tracked topic directory rides an ordinary merge onto
-the integration branch — not a hypothesis, it has happened, and it is what the
-gitignore rule above and the check in `reference/landing.md` exist to stop.
-
-So whatever must survive the run leaves the state directory under its own power,
-in the commit that lands the work:
-
-- what shipped: one dated line in the project log;
-- a decision whose rejected alternatives matter: a decision record in the project
-  trace, in the form above;
-- a measured difference or a recovered law: an entry wherever the repository keeps
-  those, or a comment beside the code that implements it;
-- what is still to do: the roadmap, handed to the next block's worktree.
-
-Never report a WP `done` whose work is not in that tree: the state file is local
-and unversioned, so the commit is the only evidence anyone else will ever see. An
-owner who explicitly asks for a state-only commit, in a repository that has
-chosen to track its state, gets one under the runtime-neutral `meta(supervisor):`
-prefix — knowing that the branch now carries state onto the integration branch
-when it lands, and that taking it back out is a separate commit.
-
-Commit messages use an English subject and a useful body derived from the
-reviewed diff and real checks: why, what, and how verified. Repository rules may
-add a stricter prefix or workflow.
+Legacy `TODO.md` and `wp-*.md` remain readable. A legacy `ROADMAP.md` is not
+migrated or deleted automatically. Review it against the tracked backlog,
+write missing future tasks and decisions into Git, commit them, then remove the
+obsolete local roadmap and worktree. `agent-state handover` remains available
+for unfinished local state; it is a recoverable multi-step copy, not an atomic
+filesystem transaction. Retry after an interruption and inspect both trees
+before removing either one.

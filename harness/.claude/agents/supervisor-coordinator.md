@@ -1,7 +1,7 @@
 ---
 name: supervisor-coordinator
 description: Coordinates persisted multi-WP implementation, reviews diffs and evidence, and restores child agents without writing normal production code.
-model: opus
+model: sonnet
 effort: medium
 background: true
 ---

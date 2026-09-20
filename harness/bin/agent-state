@@ -15,8 +15,8 @@
 //
 //   agent-state link [--topic NAME]        from inside a worktree
 //   agent-state list [--json]              the whole zoo, linked or not
-//   agent-state handover <topic> <wt>      give a topic to the worktree that is
-//                                          working the next block, in one step
+//   agent-state handover <topic> <wt>      recoverably copy local run state to
+//                                          another worktree
 //   agent-state unlink [--topic NAME]      before tearing a worktree down
 //   agent-state prune                      drop links whose target is gone
 //
@@ -24,17 +24,18 @@
 // info/exclude keeps `git add -A` from ever staging them. Neither is the state
 // itself: a tracked topic directory rides an ordinary merge into the integration
 // branch, so every command that touches state says so when it finds one, and
-// `handover` exists because git is then not a backup — a plan that must outlive
-// this run reaches the next worktree by being moved, not by being committed.
+// Permanent plans belong in Git. Handover remains for legacy local run state.
 
-import { readdirSync, readFileSync, writeFileSync, lstatSync, statSync, symlinkSync, unlinkSync, mkdirSync, realpathSync, appendFileSync, existsSync, renameSync, cpSync, rmSync } from 'node:fs'
+import { readdirSync, readFileSync, writeFileSync, readlinkSync, lstatSync, statSync, symlinkSync, unlinkSync, mkdirSync, realpathSync, appendFileSync, existsSync, renameSync, cpSync, rmSync } from 'node:fs'
 import { join, basename, dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 
 const LINK_MARK = '@' // <topic>@<worktree>: one glob covers every link, and no real topic uses it
 const EXCLUDE_RULE = '/.agents/state/*@*'
 const EXCLUDE_NOTE = "# agent-state: links to another worktree's run state, never commit these"
-const ROADMAP_FILE = 'ROADMAP.md' // the plan across runs: it outlives the worktree holding it, so losing it is real work lost
+const ROADMAP_FILE = 'ROADMAP.md' // legacy local roadmap; migrate outstanding work into Git explicitly
+const HANDOVER_FILE = '.handover.json'
 
 const EXIT = { ok: 0, usage: 64, missing: 66, refused: 73, internal: 70 }
 
@@ -77,6 +78,24 @@ function realish(path) {
 
 function stateDir(root) {
   return join(root, '.agents', 'state')
+}
+
+function validName(name) {
+  if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name.includes('..') || name.includes(LINK_MARK)) {
+    die(`invalid topic or label: ${name}`, EXIT.usage)
+  }
+  return name
+}
+
+function entry(path) {
+  try { return lstatSync(path) } catch (error) { if (error.code === 'ENOENT') return null; throw error }
+}
+
+function safeStateRoot(root) {
+  for (const path of [join(root, '.agents'), stateDir(root)]) {
+    const item = entry(path)
+    if (item && !item.isDirectory()) die(`state path is not a real directory: ${path}`, EXIT.refused)
+  }
 }
 
 function topicsIn(root) {
@@ -160,9 +179,10 @@ function readTopic(path) {
   } catch {
     return null
   }
-  const counts = { done: 0, 'in-progress': 0, blocked: 0, 'needs-restart': 0, unknown: 0 }
+  const counts = { landed: 0, verified: 0, done: 0, 'in-progress': 0, blocked: 0, 'needs-restart': 0, unknown: 0 }
   let newest = null
   let landing = null
+  const blockers = []
   for (const name of entries.filter((entry) => /^wp-.*\.md$/i.test(entry))) {
     let text = ''
     try {
@@ -172,6 +192,7 @@ function readTopic(path) {
     }
     const status = (fieldOf(text, 'status') || '').split(/[\s|]+/).find((word) => word in counts)
     counts[status || 'unknown'] += 1
+    if (status === 'blocked') blockers.push({ file: name, reason: fieldOf(text, 'traps') || fieldOf(text, 'reason') || 'unspecified' })
     const updated = fieldOf(text, 'updated')
     if (updated && (!newest || Date.parse(updated) > Date.parse(newest))) newest = updated
     const land = fieldOf(text, 'landing')
@@ -188,7 +209,7 @@ function readTopic(path) {
       }
     }
   }
-  return { path, total, counts, updated: newest, landing, hasPlan: entries.includes('TODO.md'), hasRoadmap: entries.includes(ROADMAP_FILE) }
+  return { path, total, counts, blockers, updated: newest, landing, hasPlan: entries.includes('TODO.md'), hasRoadmap: entries.includes(ROADMAP_FILE) }
 }
 
 function worktrees() {
@@ -227,7 +248,10 @@ function commandLink(ctx, options) {
     die('this is the main checkout; its own state is already where the owner looks. Run link from inside a worktree.', EXIT.refused)
   }
   const source = options.from ? realish(options.from) : ctx.worktree
-  const label = options.as || basename(source)
+  const label = validName(options.as || basename(source))
+  if (options.topic) validName(options.topic)
+  safeStateRoot(source)
+  safeStateRoot(ctx.main)
   const candidates = topicsIn(source).filter((name) => !name.includes(LINK_MARK))
   const wanted = options.topic
     ? [options.topic]
@@ -246,15 +270,16 @@ function commandLink(ctx, options) {
   let made = 0
 
   for (const topic of wanted) {
+    validName(topic)
     const target = join(stateDir(source), topic)
-    if (!existsSync(target)) die(`no such topic in this worktree: ${target}`, EXIT.missing)
+    if (!entry(target)?.isDirectory()) die(`no real topic directory in this worktree: ${target}`, EXIT.missing)
     const linkPath = join(stateDir(ctx.main), `${topic}${LINK_MARK}${label}`)
     if (isLink(linkPath)) {
       if (linkTarget(linkPath) === realish(target)) {
         say(`already linked: ${basename(linkPath)}`)
         continue
       }
-      unlinkSync(linkPath)
+      die(`refusing to replace a foreign link: ${linkPath}`, EXIT.refused)
     } else if (existsSync(linkPath)) {
       die(`refusing to replace a real directory: ${linkPath}`, EXIT.refused)
     }
@@ -269,7 +294,8 @@ function commandLink(ctx, options) {
 }
 
 function commandUnlink(ctx, options) {
-  const label = options.as || basename(ctx.worktree)
+  const label = validName(options.as || basename(ctx.worktree))
+  if (options.topic) validName(options.topic)
   let removed = 0
   for (const name of topicsIn(ctx.main)) {
     if (!name.includes(LINK_MARK)) continue
@@ -282,9 +308,7 @@ function commandUnlink(ctx, options) {
     // roadmap is the one file in there that nobody has a second copy of.
     const target = linkTarget(path)
     if (target && existsSync(join(target, ROADMAP_FILE))) {
-      say(`warning: ${topic} carries a ${ROADMAP_FILE}, a plan that outlives this run, and git is not holding a copy.`)
-      say(`  hand it on with "agent-state handover ${topic} <next-worktree>", or move what is left of it into the project log,`)
-      say('  before the worktree it lives in goes away.')
+      say(`warning: ${topic} carries a legacy ${ROADMAP_FILE}; migrate future work into the Git backlog before deleting this worktree.`)
     }
     unlinkSync(path)
     removed += 1
@@ -306,10 +330,7 @@ function commandPrune(ctx) {
   say(`PRUNED count=${removed}`)
 }
 
-// A plan that outlives one run has to reach the worktree working the next block.
-// By hand that is three steps — move the directory, link it there, drop the old
-// link — done while tearing a worktree down, which is exactly when a step gets
-// skipped and the plan goes with the worktree. This does all three or none.
+// Legacy run state can still be handed over. The durable backlog now belongs in Git.
 function findTopic(ctx, topic) {
   const roots = [ctx.main, ...worktrees().map((tree) => tree.path)]
   const seen = new Set()
@@ -324,22 +345,11 @@ function findTopic(ctx, topic) {
   return found
 }
 
-function moveTree(from, to) {
-  mkdirSync(dirname(to), { recursive: true })
-  try {
-    renameSync(from, to)
-  } catch (error) {
-    if (error.code !== 'EXDEV') throw error
-    cpSync(from, to, { recursive: true })
-    rmSync(from, { recursive: true, force: true })
-  }
-}
-
 function commandHandover(ctx, options) {
   const [topic, destination] = options._
-  if (!topic || !destination) die('usage: agent-state handover <topic> <worktree> [--rename NEW]')
-  const renamed = options.rename || topic
-  if (renamed.includes(LINK_MARK)) die(`a topic name cannot contain "${LINK_MARK}": ${renamed}`)
+  if (!topic || !destination || options._.length !== 2) die('usage: agent-state handover <topic> <worktree> [--rename NEW]')
+  validName(topic)
+  const renamed = validName(options.rename || topic)
 
   const dest = worktrees().find((tree) => realish(tree.path) === realish(destination) || basename(tree.path) === destination)
   if (!dest) die(`not a worktree of this project: ${destination} ("git worktree list" names them)`, EXIT.missing)
@@ -347,37 +357,64 @@ function commandHandover(ctx, options) {
     die('the main checkout holds links, never state: hand a topic to a worktree that is doing the work', EXIT.refused)
   }
 
+  safeStateRoot(ctx.main)
+  safeStateRoot(dest.path)
+  const target = join(stateDir(dest.path), renamed)
+  const newLink = join(stateDir(ctx.main), `${renamed}${LINK_MARK}${validName(basename(dest.path))}`)
+  const targetEntry = entry(target)
+  if (targetEntry && !targetEntry.isDirectory()) die(`refusing non-directory target: ${target}`, EXIT.refused)
+
   const sources = findTopic(ctx, topic)
-  if (sources.length === 0) die(`no topic directory named ${topic} in this project`, EXIT.missing)
-  if (sources.length > 1) {
+  if (sources.length > 1 && !(sources.length === 2 && sources.some(found => realish(found.path) === realish(target)))) {
     die(`${topic} is a real directory in more than one place, so this cannot tell which one is live:\n  ${sources.map((found) => found.path).join('\n  ')}`, EXIT.refused)
   }
-  const source = sources[0]
-  const target = join(stateDir(dest.path), renamed)
-  if (realish(source.path) === realish(target)) die(`${topic} already lives in ${dest.path}`, EXIT.refused)
-  if (existsSync(target)) die(`refusing to overwrite state that is already there: ${target}`, EXIT.refused)
-
-  moveTree(source.path, target)
-  say(`moved ${source.path} -> ${target}`)
-
-  for (const name of topicsIn(ctx.main)) {
-    if (!name.includes(LINK_MARK) || name.split(LINK_MARK)[0] !== topic) continue
-    const path = join(stateDir(ctx.main), name)
-    if (!isLink(path)) continue
-    unlinkSync(path)
-    say(`removed ${name}`)
+  const source = sources.find(found => realish(found.path) !== realish(target))
+  if (!source && !targetEntry) die(`no topic directory named ${topic} in this project`, EXIT.missing)
+  if (source) safeStateRoot(source.root)
+  const oldPath = source?.path || null
+  const markerPath = path => join(path, HANDOVER_FILE)
+  let marker = source && entry(markerPath(source.path)) ? JSON.parse(readFileSync(markerPath(source.path), 'utf8')) : null
+  const targetMarker = targetEntry && entry(markerPath(target)) ? JSON.parse(readFileSync(markerPath(target), 'utf8')) : null
+  if (targetEntry && (!targetMarker || targetMarker.topic !== topic || targetMarker.destination !== target || (marker && targetMarker.id !== marker.id))) {
+    die(`refusing to replace unrelated target data: ${target}`, EXIT.refused)
   }
+  if (!source && (!targetMarker || targetMarker.destination !== target)) die(`cannot verify completed handover at ${target}`, EXIT.refused)
+  if (source && marker && (marker.topic !== topic || marker.destination !== target)) die(`source is marked for a different handover: ${source.path}`, EXIT.refused)
+  if (!marker) marker = targetMarker || { id: randomUUID(), topic, destination: target, source: oldPath }
 
+  // Check every affected link before touching either directory. A dangling link
+  // is still owned data; never replace one by merely testing existsSync.
+  const oldLinks = topicsIn(ctx.main).filter(name => name.split(LINK_MARK)[0] === topic && name.includes(LINK_MARK))
+    .map(name => join(stateDir(ctx.main), name)).filter(path => path !== newLink)
+  for (const path of oldLinks) {
+    if (!isLink(path) || readlinkSync(path) !== marker.source) die(`foreign old link: ${path}`, EXIT.refused)
+  }
+  const existingNew = entry(newLink)
+  if (existingNew && (!existingNew.isSymbolicLink() || readlinkSync(newLink) !== target)) die(`refusing to replace foreign destination link: ${newLink}`, EXIT.refused)
+
+  if (source && !entry(markerPath(source.path))) writeFileSync(markerPath(source.path), JSON.stringify(marker) + '\n', { flag: 'wx' })
+  if (process.env.AGENT_STATE_FAIL_AFTER === 'mark') throw new Error('injected failure after mark')
+  if (!targetEntry) {
+    const stage = join(stateDir(dest.path), `.handover-${topic}-${marker.id}`)
+    if (entry(stage)) rmSync(stage, { recursive: true, force: true })
+    mkdirSync(stateDir(dest.path), { recursive: true })
+    cpSync(source.path, stage, { recursive: true, errorOnExist: true })
+    if (process.env.AGENT_STATE_FAIL_AFTER === 'copy') throw new Error('injected failure after copy')
+    renameSync(stage, target)
+  }
+  if (process.env.AGENT_STATE_FAIL_AFTER === 'publish') throw new Error('injected failure after publish')
   mkdirSync(stateDir(ctx.main), { recursive: true })
   const added = ensureExcluded(ctx.commonDir)
-  const linkPath = join(stateDir(ctx.main), `${renamed}${LINK_MARK}${basename(dest.path)}`)
-  if (isLink(linkPath)) unlinkSync(linkPath)
-  else if (existsSync(linkPath)) die(`refusing to replace a real directory: ${linkPath}`, EXIT.refused)
-  symlinkSync(target, linkPath)
-  say(`${basename(linkPath)} -> ${target}`)
+  if (!existingNew) symlinkSync(target, newLink)
+  if (process.env.AGENT_STATE_FAIL_AFTER === 'link') throw new Error('injected failure after link')
+  for (const path of oldLinks) unlinkSync(path)
+  if (process.env.AGENT_STATE_FAIL_AFTER === 'unlink') throw new Error('injected failure after unlink')
+  if (source) rmSync(source.path, { recursive: true })
+  if (process.env.AGENT_STATE_FAIL_AFTER === 'remove') throw new Error('injected failure after remove')
+  say(`${basename(newLink)} -> ${target}`)
   if (added) say(`added "${EXCLUDE_RULE}" to the repository's local info/exclude, so these links are never staged`)
-  warnIfTracked(source.root)
-  if (realish(source.root) !== realish(dest.path)) warnIfTracked(dest.path)
+  if (source) warnIfTracked(source.root)
+  warnIfTracked(dest.path)
   say(`HANDED_OVER topic=${renamed} to=${basename(dest.path)}`)
 }
 
@@ -457,6 +494,7 @@ function commandList(ctx, options) {
     const tail = [
       row.hasRoadmap ? 'roadmap: a plan across runs, owned here' : null,
       row.total ? progress : row.hasPlan ? 'plan only, no work packages yet' : 'no work packages',
+      row.blockers?.length ? `blocked: ${row.blockers.map(item => `${item.file} ${item.reason}`).join('; ')}` : null,
       row.landing ? `landing: ${row.landing}` : null,
       row.updated ? `${ageOf(row.updated)} ago` : null,
       row.unlinkedWorktree ? 'not linked, run: agent-state link (in that worktree)' : null,
@@ -490,11 +528,10 @@ const USAGE = `agent-state: see every agent's run state from one directory
       topic nobody linked is listed too, marked as such.
 
   agent-state handover <topic> <worktree> [--rename NEW]
-      Give a topic to the worktree working the next block: the directory is moved
-      there, published from its new home, and the old link removed, in one step
-      that either does all three or changes nothing. This is how a plan that
-      outlives one run survives, because run state is never committed and git is
-      therefore not keeping a copy. The main checkout is never a destination.
+      Recoverably copy unfinished local state to another worktree. The source
+      remains until the complete destination and new link are published. This
+      is a multi-step operation: retry after interruption. Permanent plans
+      belong in Git. The main checkout is never a destination.
 
   agent-state unlink [--topic NAME] [--all]
       Remove this worktree's links. Do this when the worktree is torn down;

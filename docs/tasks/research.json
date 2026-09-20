@@ -1,0 +1,40 @@
+{
+  "id": "example-research",
+  "planRevision": "a34bf777c38b624b7bf624651338eb4e431dde0d",
+  "revision": "197674e928644f1bec8cdbac94941fde5a15b35af4ebd1f820eef3f2ff365e8c",
+  "status": "draft",
+  "kind": "research",
+  "goal": "Determine whether Claude loads AGENTS.md in this installation",
+  "behavior": "A dated report records the observed instruction loading for each tested setup",
+  "facts": [
+    "Instruction loading may depend on CLAUDE.md and configuration"
+  ],
+  "boundaries": [
+    "Do not change user settings"
+  ],
+  "interfaces": [
+    "Report setup, command, observation, and uncertainty"
+  ],
+  "dependencies": [
+    "Claude Code installation and user access"
+  ],
+  "criteria": [
+    {
+      "id": 1,
+      "outcome": "Report covers setups with and without CLAUDE.md",
+      "checks": [
+        "review"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "review",
+      "command": "Manual independent review of recorded Claude transcripts"
+    }
+  ],
+  "escalation": [
+    "Escalate if Claude Code cannot be launched in the test environment"
+  ],
+  "decisions": []
+}

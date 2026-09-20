@@ -14,21 +14,24 @@ when the skill routes to them.
   because a tracked topic rides an ordinary merge onto the integration branch.
   The shared harness defines its schema but never shares state files between
   repositories.
-- State written inside a worktree is published to the main checkout with
+- Permanent backlog and decisions belong in Git; local state references the
+  task ID and revision. State written inside a worktree is published to the main checkout with
   `.agents/bin/agent-state link` as soon as the topic exists, and unpublished
   with `agent-state unlink` when it closes, so the owner sees every agent's
-  progress in one directory. `agent-state list` prints the whole picture. A plan
-  that outlives one run — a roadmap of blocks, one worktree each — is handed to
-  the next worktree with `agent-state handover <topic> <worktree>` while landing
-  the block, because git is not holding a copy of it.
+  progress in one directory. `agent-state list` prints the whole picture. A
+  legacy local roadmap must be migrated explicitly into the Git backlog.
+- When implementation needs an isolated branch or could collide with another
+  agent, root creates a dedicated worktree and delegates ownership to a
+  supervisor. Root does not implement inside that worktree; the integration
+  checkout holds only published state links.
 - A worktree isolates files, not the machine. Lease every host-global resource a
   command touches (ports, an external application, heavy runner slots) through
   `.agents/bin/agent-lease`, and never hardcode or hand-pick a port. Wire the
   lease into the repository's own commands so the documented invocation is
   already safe to type.
 - Merging into the integration branch is queued, not negotiated. Prepare and run
-  the checks in your own worktree, then land through
-  `.agents/bin/agent-merge-lock land --branch <mine> --base <sha>`, and release
+  the checks in your own worktree with `agent-verify record`, then land through
+  `.agents/bin/agent-merge-lock land --branch <mine> --base <sha> --evidence <file> --task-id <id> --task-revision <rev>`, and release
   the lock as soon as the merge is in. After any interruption, run
   `.agents/bin/agent-merge-lock status` before inspecting git.
 - Repository-specific product, safety, trace, test, and Git rules belong in the
