@@ -10,7 +10,7 @@ the checkout.
 ![Animated split terminal: a supervisor launches a task on the left while a live agent tree on the right grows as subagents work, verify, and finish.](docs/supervisor-demo.gif)
 
 The supervisor turns one ready task into visible, verifiable parallel work — with
-the live agent tree keeping every session in view.
+[agent-monitor](https://github.com/a0s/agent-monitor) keeping every session in view.
 
 Regenerate this documentation-only animation with
 [`docs/generate-readme-demo.mjs`](docs/generate-readme-demo.mjs).
@@ -102,12 +102,11 @@ rules.
 
 ## Live agent tree
 
-After `link.sh` completes, run this from any worktree of the target repository:
+The live agent tree is now its own project,
+[agent-monitor](https://github.com/a0s/agent-monitor). It needs nothing linked
+into the repository:
 
 ```sh
-.bin/agent-tree
+brew install a0s/agent-monitor/agent-monitor
+agent-monitor        # from the repository root
 ```
-
-The display refreshes every two seconds; stop it with `Ctrl-C`. Use `--codex`
-or `--claude-code` to filter, and `--json` for one machine-readable snapshot.
-See [monitor details](docs/agent-tree-plan.md).
